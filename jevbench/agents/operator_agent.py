@@ -25,8 +25,19 @@ DEFAULT_DIR = Path(os.environ.get("JEV_OPERATOR_DIR", ".operator"))
 DEFAULT_NAME = os.environ.get("JEV_OPERATOR_NAME", "operator")
 """誰が打ったかを結果に残すための名前。'operator' のままだと、人が打ったのか
 Haiku のサブエージェントが打ったのかが後から分からなくなる。"""
-DEFAULT_TIMEOUT = float(os.environ.get("JEV_OPERATOR_TIMEOUT", "600"))
+DEFAULT_TIMEOUT = float(os.environ.get("JEV_OPERATOR_TIMEOUT", "180"))
+MAX_CONSECUTIVE_TIMEOUTS = int(os.environ.get("JEV_OPERATOR_MAX_TIMEOUTS", "2"))
+"""続けてこの回数だけ無応答なら、相手は死んでいるとみなして局ごと止める。
+
+答えが来ない手はヒューリスティック最善手で代打ちする。黙って続けると、
+相手が落ちている間ずっと基準線が代わりに打ち、`agreement` はほぼ 1.0、
+`mean_regret` はほぼ 0 の「優秀な」行が出来上がってしまう。それはもう
+その相手を測った結果ではない。"""
 POLL_SECONDS = 0.25
+
+
+class OperatorGone(RuntimeError):
+    """相手が応答しなくなった。局を続けても測定値にならないので投げる。"""
 
 
 class OperatorAgent(BaseAgent):
@@ -47,6 +58,7 @@ class OperatorAgent(BaseAgent):
         self.answer_path = self.dir / "answer.txt"
         self.log_path = self.dir / "log.jsonl"
         self._index = 0
+        self._consecutive_timeouts = 0
         for stale in (self.turn_path, self.answer_path):
             stale.unlink(missing_ok=True)
 
@@ -75,12 +87,19 @@ class OperatorAgent(BaseAgent):
                     self.turn_path.unlink(missing_ok=True)
                     self.answer_path.unlink(missing_ok=True)
                     self._index += 1
+                    self._consecutive_timeouts = 0
                     return Decision(label=label, latency_ms=0.0)
                 # 読めない答えは捨ててもう一度待つ
                 self.answer_path.unlink(missing_ok=True)
             time.sleep(POLL_SECONDS)
 
         self.turn_path.unlink(missing_ok=True)
+        self._consecutive_timeouts += 1
+        if self._consecutive_timeouts >= MAX_CONSECUTIVE_TIMEOUTS:
+            raise OperatorGone(
+                f"{self.name} が {self._consecutive_timeouts} 手続けて無応答"
+                f"（1 手 {self.timeout:.0f}s）。以降を代打ちしても測定にならないので中止する。"
+            )
         return fallback(candidates, f"operator timeout after {self.timeout:.0f}s")
 
     def close(self) -> None:
