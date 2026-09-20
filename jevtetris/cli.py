@@ -57,12 +57,22 @@ def _print_table(rows: list[dict]) -> None:
     if not rows:
         print("結果なし")
         return
-    header = ["agent", "game", "lines", "pieces", "median_latency_ms", "cost_usd", "agreement", "mean_regret"]
+    header = [
+        "agent", "game", "lines", "pieces", "median_latency_ms",
+        "cost_usd", "agreement", "mean_regret", "fallbacks",
+    ]
     widths = {h: max(len(h), *(len(str(r.get(h, ""))) for r in rows)) for h in header}
     print("  ".join(h.ljust(widths[h]) for h in header))
     print("  ".join("-" * widths[h] for h in header))
     for r in rows:
         print("  ".join(str(r.get(h, "")).ljust(widths[h]) for h in header))
+
+    for r in rows:
+        if r.get("fallbacks"):
+            print(
+                f"\n! {r['agent']} は {r['fallbacks']}/{r['pieces']} 手が API 失敗で"
+                f"ヒューリスティックに落ちている: {r['fallback_reason']}"
+            )
 
 
 if __name__ == "__main__":

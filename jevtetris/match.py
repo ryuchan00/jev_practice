@@ -30,6 +30,8 @@ class MatchResult:
     cost_usd: float
     agreement: float
     mean_regret: float
+    fallbacks: int
+    fallback_reason: str
 
 
 def play(agent: Agent, config: MatchConfig | None = None) -> Iterator[dict]:
@@ -102,6 +104,9 @@ def _summarize(
 ) -> MatchResult:
     agreed = sum(1 for t in turns if t.agreed_with_heuristic)
     regrets = [t.regret for t in turns]
+    # API が落ちた手はヒューリスティックに逃がしている。全手そうなった局を
+    # 「計測できた」と読み違えないよう、件数と最初の理由を残す。
+    fell_back = [t for t in turns if t.decision.note.startswith("fallback: ")]
     base = agent if isinstance(agent, BaseAgent) else None
     return MatchResult(
         agent=getattr(agent, "name", "agent"),
@@ -113,4 +118,6 @@ def _summarize(
         cost_usd=round(base.cost_usd, 6) if base else 0.0,
         agreement=round(agreed / len(turns), 3) if turns else 0.0,
         mean_regret=round(sum(regrets) / len(regrets), 3) if regrets else 0.0,
+        fallbacks=len(fell_back),
+        fallback_reason=fell_back[0].decision.note[len("fallback: "):] if fell_back else "",
     )

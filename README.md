@@ -46,6 +46,11 @@ Jev（TypeSafe の **System One** モデル）と LLM（Claude Haiku 4.5）に
 | `cost_usd` | トークン使用量からの概算（Haiku はキャッシュ読み書きの割引・割増込み） |
 | `agreement` | ヒューリスティック最善手と一致した割合 |
 | `mean_regret` | 選んだ手と最善手の評価値の差の平均。0 に近いほど良い |
+| `fallbacks` | API が失敗してヒューリスティックに落ちた手数 |
+
+`fallbacks` が 0 でない行は**そのエージェントを測れていない**。
+全手フォールバックすると `agreement` は 1.0、`mean_regret` は 0.0 になり、
+一見すると完璧な成績に見えてしまうので、必ずここを先に見ること。
 
 `agreement` と `mean_regret` があるので、**ライン数だけでは見えない判断の質**を
 1 局でも比べられる。
@@ -77,10 +82,55 @@ cp .env.example .env   # キーを書く
 | エージェント | 必要なもの |
 |---|---|
 | `heuristic` | 不要。キーが 1 つも無くてもこれは動く |
-| `jev` | `TYPESAFE_API_KEY` — **TypeSafe の契約が要る**（https://typesafe.ai で発行） |
+| `jev` | `TYPESAFE_API_KEY` |
 | `claude` | `ANTHROPIC_API_KEY`、または `ant auth login` 済みのプロファイル |
 
 キーが無いエージェントは起動時に理由を出してスキップされる（他のエージェントは走る）。
+
+#### ロリポップ！AI ゲートウェイ経由で両方まかなう
+
+[ロリポップ！AI ゲートウェイ](https://ai-gateway.lolipop.jp/) は
+OpenAI 互換 / Anthropic 互換に加えて、Jev と同じ `POST /v1/systemone`
+（型付き確率的判断）を提供している。**キー 1 本で jev と claude の両方**を通せる。
+
+```bash
+# .env
+TYPESAFE_API_KEY=sk-...            # ゲートウェイの推論用 API キー
+TYPESAFE_BASE_URL=https://ai-gateway.lolipop.jp
+TYPESAFE_DEFAULT_MODEL=typesafe/jev-latest
+
+ANTHROPIC_API_KEY=sk-...           # 同じキーでよい
+ANTHROPIC_BASE_URL=https://ai-gateway.lolipop.jp
+JEV_LLM_MODEL=claude-haiku-4-5     # ゲートウェイ上の Haiku の ID（prefix 無し）
+```
+
+どちらの SDK も `*_BASE_URL` を自分で読むので、コード側の変更は要らない。
+
+**推論キーの発行**（`mgmt_` で始まるマネジメントトークンが要る。
+マネジメントトークンは推論には使えない）:
+
+```bash
+ACC=<accountId>; PRJ=<projectId>
+BASE=https://ai-gateway.lolipop.jp/console/v1/accounts/$ACC/projects/$PRJ
+OP=$(uuidgen); AT=$(uuidgen)
+
+# 1. 発行（この時点では blocked:true で、まだ一覧に出ない）
+curl -s -X POST -H "Authorization: Bearer $MGMT" -H 'Content-Type: application/json' \
+  -d "{\"keyAlias\":\"jev-practice\",\"expiresInDays\":30,
+       \"operationId\":\"$OP\",\"attemptId\":\"$AT\",\"recovery\":false}" "$BASE/keys"
+
+# 2. 確定（これを忘れるとキーは有効にならない）
+curl -s -X POST -H "Authorization: Bearer $MGMT" -H 'Content-Type: application/json' \
+  -d "{\"attemptId\":\"$AT\"}" "$BASE/keys/provisioning/$OP/confirm"
+```
+
+平文のキーは 1. のレスポンスの `key.key` に**一度だけ**返る。
+
+**前提となるアカウント設定**（どちらも足りないと全手フォールバックになる）:
+
+- **残高**: prepaid なので、チャージが無いと推論は `402 billing_error / Insufficient balance`
+- **`typesafe/jev-latest` の利用許可**: 既定では
+  `403 permission_error / model_not_allowed`。ダッシュボードで許可が要る
 
 ## 実測する
 

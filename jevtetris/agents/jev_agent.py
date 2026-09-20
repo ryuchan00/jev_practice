@@ -26,14 +26,18 @@ INSTRUCTIONS = (
 class JevAgent(BaseAgent):
     name = "jev"
 
-    def __init__(self, model: str = "jev-latest", timeout: float = 10.0) -> None:
+    def __init__(self, model: str | None = None, timeout: float = 10.0) -> None:
         super().__init__()
         from typesafe_sdk import TypeSafeClient  # 遅延 import（未設定でも他エージェントは動く）
 
         if not os.environ.get("TYPESAFE_API_KEY"):
-            raise RuntimeError("TYPESAFE_API_KEY が未設定（https://typesafe.ai で発行する）")
-        self.model = model
-        self.client = TypeSafeClient(model=model, timeout=timeout)
+            raise RuntimeError(
+                "TYPESAFE_API_KEY が未設定"
+                "（TypeSafe 直、またはロリポップ AI ゲートウェイのキー）"
+            )
+        # model / base_url は未指定なら SDK が TYPESAFE_DEFAULT_MODEL / TYPESAFE_BASE_URL を読む。
+        self.model = model or os.environ.get("TYPESAFE_DEFAULT_MODEL", "jev-latest")
+        self.client = TypeSafeClient(model=self.model, timeout=timeout)
         self.input_price_per_mtok = DEFAULT_INPUT_PRICE
         self.output_price_per_mtok = DEFAULT_OUTPUT_PRICE
         self.last_danger: float | None = None

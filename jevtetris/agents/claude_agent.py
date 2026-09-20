@@ -14,6 +14,8 @@ from ..heuristic import Candidate, board_stats
 from ..tetris import Board
 from .base import BaseAgent, Decision, fallback
 
+# ゲートウェイ経由の場合はモデル ID の綴りが変わることがあるので環境変数で差し替える。
+# base_url は SDK が ANTHROPIC_BASE_URL を読む。
 MODEL = os.environ.get("JEV_LLM_MODEL", "claude-haiku-4-5")
 
 # Claude Haiku 4.5 の料金（USD / 1M tokens）。
