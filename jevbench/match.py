@@ -66,6 +66,17 @@ def play(agent: Agent, config: MatchConfig | None = None) -> Iterator[dict]:
     turns: list[Turn] = []
     stuck = False
 
+    # 遅いエージェントを待つ間にも、同じ初期局面だと確認できるよう先に送る。
+    yield {
+        "type": "start",
+        "agent": getattr(agent, "name", "agent"),
+        "game": game.name,
+        "board": game.rows(state),
+        "goal_label": game.goal_label,
+        "progress": game.progress(state),
+        "hud": game.hud(state),
+    }
+
     for index in range(turn_limit):
         candidates = game.candidates(state, cfg.candidate_limit, rng)
         if not candidates:

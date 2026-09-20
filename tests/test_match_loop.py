@@ -13,6 +13,34 @@ import pytest
 
 
 @pytest.mark.parametrize("game", GAME_NAMES)
+def test_first_event_carries_the_initial_state(game):
+    start = next(play(HeuristicAgent(), MatchConfig(game=game, seed=5)))
+    assert start["type"] == "start"
+    assert start["board"]
+    assert "hud" in start
+
+
+@pytest.mark.parametrize("game", GAME_NAMES)
+def test_same_seed_gives_the_same_start_board(game):
+    starts = [
+        next(play(HeuristicAgent(), MatchConfig(game=game, seed=5))) for _ in range(2)
+    ]
+    assert starts[0]["board"] == starts[1]["board"]
+
+
+@pytest.mark.parametrize("game", GAME_NAMES)
+def test_start_event_does_not_count_as_a_turn(game):
+    fixed_turns = 4
+    events = list(
+        play(HeuristicAgent(), MatchConfig(game=game, seed=5, turns=fixed_turns))
+    )
+    assert len([event for event in events if event["type"] == "turn"]) == fixed_turns
+    assert events[-1]["type"] == "summary"
+    assert events[-1]["turns"] == fixed_turns
+    assert len([event for event in events if event["type"] == "summary"]) == 1
+
+
+@pytest.mark.parametrize("game", GAME_NAMES)
 def test_heuristic_reaches_the_default_goal(game):
     summary = list(play(HeuristicAgent(), MatchConfig(game=game, seed=3)))[-1]
     assert summary["type"] == "summary"

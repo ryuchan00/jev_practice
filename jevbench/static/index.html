@@ -88,6 +88,7 @@
   <label>right <select id="agentB"></select></label>
   <label>seed <input id="seed" type="number" value="0" style="width:70px"></label>
   <label>goal <input id="goal" type="number" placeholder="既定" style="width:70px"></label>
+  <label>turns <input id="turns" type="number" placeholder="既定" style="width:70px"></label>
   <label>step delay (ms) <input id="delay" type="number" value="0" style="width:90px"></label>
   <button id="start" type="submit">start</button>
 </form>
@@ -170,6 +171,31 @@ function showBoard(p, msg) {
   }
 }
 
+function showInitialBoard(p, msg) {
+  clearTimeout(p.popTimer);
+  p.q("board").innerHTML = msg.hud.kind === "zookeeper"
+    ? renderZoo(msg.board)
+    : renderText(msg.board);
+}
+
+function showState(p, msg, initial = false) {
+  const hud = msg.hud;
+  if (initial) showInitialBoard(p, msg); else showBoard(p, msg);
+  p.q("quota").innerHTML = renderQuota(hud);
+  p.progress = msg.progress;
+  p.set("progress", msg.progress.toLocaleString());
+  p.set("goal-label", msg.goal_label);
+  if (hud.kind === "zookeeper") {
+    p.set("score", hud.score.toLocaleString());
+    p.set("score-label", "score");
+    const pct = Math.max(0, Math.min(100, 100 * hud.timer / hud.timer_max));
+    const bar = p.q("timer-bar");
+    bar.style.width = `${pct}%`;
+    bar.style.background = pct < 20 ? "var(--bad)" : pct < 45 ? "var(--warn)" : "var(--good)";
+  }
+  markLead();
+}
+
 function renderText(rows) {
   const body = rows.map(row =>
     [...row].map(c => c === "." ? '<span class="empty">.</span>' : c).join("")
@@ -236,6 +262,7 @@ document.getElementById("controls").addEventListener("submit", ev => {
     game: document.getElementById("game").value,
     seed: Number(document.getElementById("seed").value),
     goal: Number(document.getElementById("goal").value) || null,
+    turns: Number(document.getElementById("turns").value) || null,
     step_delay_ms: Number(document.getElementById("delay").value),
   }));
 
@@ -246,22 +273,13 @@ document.getElementById("controls").addEventListener("submit", ev => {
 
     if (msg.type === "error") { p.set("err", msg.message); return; }
 
-    if (msg.type === "turn") {
-      const hud = msg.hud;
-      showBoard(p, msg);
-      p.q("quota").innerHTML = renderQuota(hud);
+    if (msg.type === "start") {
+      showState(p, msg, true);
+      p.set("turns", 0);
+    }
 
-      p.progress = msg.progress;
-      p.set("progress", msg.progress.toLocaleString());
-      p.set("goal-label", msg.goal_label);
-      if (hud.kind === "zookeeper") {
-        p.set("score", hud.score.toLocaleString());
-        p.set("score-label", "score");
-        const pct = Math.max(0, Math.min(100, 100 * hud.timer / hud.timer_max));
-        const bar = p.q("timer-bar");
-        bar.style.width = `${pct}%`;
-        bar.style.background = pct < 20 ? "var(--bad)" : pct < 45 ? "var(--warn)" : "var(--good)";
-      }
+    if (msg.type === "turn") {
+      showState(p, msg);
 
       p.set("turns", msg.index + 1);
       p.latencies.push(msg.latency_ms);
@@ -274,7 +292,6 @@ document.getElementById("controls").addEventListener("submit", ev => {
         p.q("fallbacks").className = "bad";
         p.set("err", msg.note.slice("fallback: ".length));
       }
-      markLead();
     }
 
     if (msg.type === "summary") {
