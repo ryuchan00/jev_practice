@@ -8,9 +8,9 @@ from __future__ import annotations
 
 import os
 
-from ..heuristic import Candidate, board_stats
-from ..tetris import Board
-from .base import BaseAgent, Decision, fallback
+from typing import Any
+
+from ..core import BaseAgent, Candidate, Decision, fallback
 
 # 2026-09 時点の System One 料金（USD / 1M tokens）。環境変数で上書きできる。
 DEFAULT_INPUT_PRICE = float(os.environ.get("JEV_INPUT_PRICE", "0.10"))
@@ -42,23 +42,17 @@ class JevAgent(BaseAgent):
         self.output_price_per_mtok = DEFAULT_OUTPUT_PRICE
         self.last_danger: float | None = None
 
-    def _decide(self, board: Board, piece: str, candidates: list[Candidate]) -> Decision:
+    def _decide(self, state: dict[str, Any], candidates: list[Candidate]) -> Decision:
         from typesafe_sdk import Choice, Noul, TypeSafeError
 
-        state = {
-            "board": board.to_text(),
-            "current_piece": piece,
-            "stats": board_stats(board),
-            "legend": "'.' is empty, a letter is a settled block. Row 0 is the top.",
-        }
-        criteria = {c.label: c.describe() for c in candidates}
+        criteria = {c.label: c.summary for c in candidates}
 
         try:
             res = self.client.system_one(
                 state=state,
                 questions={
                     "best": Choice(instructions=INSTRUCTIONS, criteria=criteria),
-                    "urgent": Noul(instructions="Is the board close to game over?"),
+                    "urgent": Noul(instructions="Is the board in a bad shape?"),
                 },
             )
         except TypeSafeError as exc:

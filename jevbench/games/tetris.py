@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import random
 from dataclasses import dataclass, field
-from typing import Iterator
+from typing import Any
+
+from ..core import Candidate, label_candidates
 
 WIDTH = 10
 HEIGHT = 20
@@ -183,6 +185,93 @@ def _drop(board: Board, shape: list[tuple[int, int]], offset: int) -> list[tuple
     return best
 
 
-def iter_pieces(bag: SevenBag) -> Iterator[str]:
-    while True:
-        yield bag.next()
+# 記事の評価式:
+#   score = -4*holes + 3*cleared_lines - 0.5*max_height - 0.2*roughness
+HOLE_WEIGHT = -4.0
+CLEAR_WEIGHT = 3.0
+HEIGHT_WEIGHT = -0.5
+ROUGHNESS_WEIGHT = -0.2
+
+
+def evaluate(placement: Placement) -> tuple[float, int, int, int]:
+    board = Board([list(row) for row in placement.board_after])
+    holes = board.holes()
+    max_height = board.max_height()
+    roughness = board.roughness()
+    score = (
+        HOLE_WEIGHT * holes
+        + CLEAR_WEIGHT * placement.cleared
+        + HEIGHT_WEIGHT * max_height
+        + ROUGHNESS_WEIGHT * roughness
+    )
+    return score, holes, max_height, roughness
+
+
+@dataclass
+class State:
+    board: Board
+    bag: SevenBag
+    piece: str
+    lines: int = 0
+    turn: int = 0
+
+
+class Tetris:
+    name = "tetris"
+    goal_label = "lines"
+    default_goal = 20
+    default_max_turns = 200
+
+    def start(self, seed: int) -> State:
+        bag = SevenBag(seed)
+        return State(board=Board(), bag=bag, piece=bag.next())
+
+    def candidates(self, state: State, limit: int, rng: random.Random) -> list[Candidate]:
+        scored = []
+        for placement in placements(state.board, state.piece):
+            score, holes, max_height, roughness = evaluate(placement)
+            summary = (
+                f"col {placement.col}, rot {placement.rotation}, "
+                f"clears {placement.cleared}, holes {holes}, "
+                f"max_height {max_height}, bumpiness {roughness}"
+            )
+            detail = {
+                "column": placement.col,
+                "rotation": placement.rotation,
+                "lines_cleared": placement.cleared,
+                "holes_after": holes,
+                "max_height_after": max_height,
+                "bumpiness_after": roughness,
+            }
+            scored.append((score, summary, detail, placement))
+        return label_candidates(scored, limit, rng)
+
+    def apply(self, state: State, candidate: Candidate) -> State:
+        placement: Placement = candidate.move
+        return State(
+            board=Board([list(row) for row in placement.board_after]),
+            bag=state.bag,
+            piece=state.bag.next(),
+            lines=state.lines + placement.cleared,
+            turn=state.turn + 1,
+        )
+
+    def progress(self, state: State) -> int:
+        return state.lines
+
+    def rows(self, state: State) -> list[str]:
+        return state.board.to_rows()
+
+    def view(self, state: State) -> dict[str, Any]:
+        board = state.board
+        return {
+            "board": self.rows(state),
+            "current_piece": state.piece,
+            "legend": "'.' is empty, a letter is a settled block. Row 0 is the top.",
+            "stats": {
+                "holes": board.holes(),
+                "max_height": board.max_height(),
+                "bumpiness": board.roughness(),
+                "lines": state.lines,
+            },
+        }

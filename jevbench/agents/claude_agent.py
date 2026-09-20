@@ -10,9 +10,9 @@ from __future__ import annotations
 import json
 import os
 
-from ..heuristic import Candidate, board_stats
-from ..tetris import Board
-from .base import BaseAgent, Decision, fallback
+from typing import Any
+
+from ..core import BaseAgent, Candidate, Decision, fallback
 
 # ゲートウェイ経由の場合はモデル ID の綴りが変わることがあるので環境変数で差し替える。
 # base_url は SDK が ANTHROPIC_BASE_URL を読む。
@@ -24,19 +24,14 @@ OUTPUT_PRICE = 5.00
 CACHE_WRITE_MULTIPLIER = 1.25
 CACHE_READ_MULTIPLIER = 0.10
 
-SYSTEM_PROMPT = """You are a Tetris engine picking one placement per turn.
+SYSTEM_PROMPT = """You are a game engine picking one move per turn.
 
-The board is 10 columns wide and 20 rows tall. Row 0 is the top row.
-'.' is an empty cell; a letter is a settled block.
+You are given the current board, its stats, and a list of candidate moves.
+Each candidate has a label and the effect of playing it. Pick the single
+best label.
 
-You are given a list of candidate placements, each with a label and the stats of
-the board *after* that placement is applied. Pick the single best label.
-
-Prefer, in order:
-1. clearing lines,
-2. creating no new holes,
-3. keeping max_height low,
-4. keeping bumpiness low.
+Prefer moves that score the most now without leaving the board in a worse
+shape for later turns.
 
 Answer only through the required JSON schema. Do not explain."""
 
@@ -59,17 +54,12 @@ class ClaudeAgent(BaseAgent):
         self.cache_write_tokens = 0
         self.cache_read_tokens = 0
 
-    def _decide(self, board: Board, piece: str, candidates: list[Candidate]) -> Decision:
+    def _decide(self, state: dict[str, Any], candidates: list[Candidate]) -> Decision:
         import anthropic
 
         labels = [c.label for c in candidates]
         user_content = json.dumps(
-            {
-                "board": board.to_rows(),
-                "current_piece": piece,
-                "stats": board_stats(board),
-                "candidates": {c.label: c.as_dict() for c in candidates},
-            },
+            {**state, "candidates": {c.label: c.detail for c in candidates}},
             ensure_ascii=False,
         )
 

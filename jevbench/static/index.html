@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>jev tetris</title>
+<title>jev bench</title>
 <style>
   :root { color-scheme: dark; --bg:#111318; --panel:#1b1f27; --line:#2b313d; --fg:#e6e9ef; --dim:#8b93a3; }
   body { margin:0; padding:24px 16px; background:var(--bg); color:var(--fg);
@@ -27,13 +27,14 @@
 </style>
 </head>
 <body>
-<h1>jev tetris — System One vs LLM</h1>
+<h1>jev bench — System One vs LLM</h1>
 
 <form id="controls">
+  <label>game <select id="game"></select></label>
   <label>agent A <select id="agentA"></select></label>
   <label>agent B <select id="agentB"></select></label>
   <label>seed <input id="seed" type="number" value="0" style="width:80px"></label>
-  <label>target lines <input id="lines" type="number" value="20" style="width:80px"></label>
+  <label>goal <input id="goal" type="number" value="" placeholder="既定" style="width:80px"></label>
   <label>step delay (ms) <input id="delay" type="number" value="0" style="width:90px"></label>
   <button id="start" type="submit">start</button>
 </form>
@@ -41,7 +42,6 @@
 <div class="boards" id="boards"></div>
 
 <script>
-const EMPTY_ROW = ".".repeat(10);
 const boards = document.getElementById("boards");
 const panels = new Map();
 
@@ -52,8 +52,8 @@ function panel(agent) {
   el.innerHTML = `<h2>${agent}</h2>
     <div class="grid"></div>
     <dl>
-      <dt>pieces</dt><dd data-k="pieces">0</dd>
-      <dt>lines</dt><dd data-k="lines">0</dd>
+      <dt>turns</dt><dd data-k="turns">0</dd>
+      <dt data-k="goal-label">progress</dt><dd data-k="progress">0</dd>
       <dt>latency (median)</dt><dd data-k="latency">–</dd>
       <dt>tokens in / out</dt><dd data-k="tokens">0 / 0</dd>
       <dt>cost (USD)</dt><dd data-k="cost">$0.000000</dd>
@@ -61,7 +61,7 @@ function panel(agent) {
       <dt>fallbacks</dt><dd data-k="fallbacks">0</dd>
     </dl>
     <div class="err" data-k="err"></div>`;
-  el.querySelector(".grid").innerHTML = renderRows(Array(20).fill(EMPTY_ROW));
+  el.querySelector(".grid").innerHTML = "";
   boards.appendChild(el);
   const p = {
     el,
@@ -74,9 +74,18 @@ function panel(agent) {
   return p;
 }
 
+const GEM_COLORS = {
+  R: "#ff6b6b", G: "#6bd68a", B: "#6aa9ff",
+  Y: "#f2cb53", P: "#c78bff", C: "#5fd6d0",
+};
+
 function renderRows(rows) {
   return rows.map(row =>
-    [...row].map(c => c === "." ? '<span class="empty">.</span>' : c).join("")
+    [...row].map(c => {
+      if (c === ".") return '<span class="empty">.</span>';
+      const color = GEM_COLORS[c];
+      return color ? `<span style="color:${color}">${c}</span>` : c;
+    }).join("")
   ).join("\n");
 }
 
@@ -87,12 +96,14 @@ function median(xs) {
   return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
 }
 
-async function loadAgents() {
-  const { agents } = await (await fetch("/agents")).json();
+async function loadOptions() {
+  const { agents, games } = await (await fetch("/agents")).json();
   for (const [id, preset] of [["agentA", "jev"], ["agentB", "claude"]]) {
     const sel = document.getElementById(id);
     sel.innerHTML = agents.map(a => `<option ${a === preset ? "selected" : ""}>${a}</option>`).join("");
   }
+  document.getElementById("game").innerHTML =
+    games.map(g => `<option ${g === "match3" ? "selected" : ""}>${g}</option>`).join("");
 }
 
 document.getElementById("controls").addEventListener("submit", ev => {
@@ -112,7 +123,8 @@ document.getElementById("controls").addEventListener("submit", ev => {
   ws.onopen = () => ws.send(JSON.stringify({
     agents,
     seed: Number(document.getElementById("seed").value),
-    target_lines: Number(document.getElementById("lines").value),
+    game: document.getElementById("game").value,
+    goal: Number(document.getElementById("goal").value) || null,
     step_delay_ms: Number(document.getElementById("delay").value),
   }));
 
@@ -123,8 +135,9 @@ document.getElementById("controls").addEventListener("submit", ev => {
     if (msg.type === "error") { p.set("err", msg.message); return; }
     if (msg.type === "turn") {
       p.grid.innerHTML = renderRows(msg.board);
-      p.set("pieces", msg.index + 1);
-      p.set("lines", msg.lines);
+      p.set("turns", msg.index + 1);
+      p.set("progress", msg.progress.toLocaleString());
+      p.el.querySelector('[data-k="goal-label"]').textContent = msg.goal_label;
       p.latencies.push(msg.latency_ms);
       p.set("latency", `${Math.round(median(p.latencies))} ms`);
       p.set("tokens", `${msg.input_tokens.toLocaleString()} / ${msg.output_tokens.toLocaleString()}`);
@@ -147,7 +160,7 @@ document.getElementById("controls").addEventListener("submit", ev => {
   ws.onclose = () => { button.disabled = false; };
 });
 
-loadAgents();
+loadOptions();
 </script>
 </body>
 </html>

@@ -11,11 +11,12 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from .agents import AGENT_NAMES, build
+from .games import GAME_NAMES
 from .match import MatchConfig, play
 
 STATIC_DIR = Path(__file__).parent / "static"
 
-app = FastAPI(title="jev-tetris")
+app = FastAPI(title="jev-bench")
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 
@@ -26,7 +27,7 @@ async def index() -> FileResponse:
 
 @app.get("/agents")
 async def agents() -> dict[str, list[str]]:
-    return {"agents": list(AGENT_NAMES)}
+    return {"agents": list(AGENT_NAMES), "games": list(GAME_NAMES)}
 
 
 async def _run_agent(name: str, config: MatchConfig, send) -> None:
@@ -73,10 +74,11 @@ async def ws(websocket: WebSocket) -> None:
 
     # 同じエージェントを 2 つ選ばれても 1 回だけ走らせる（イベントは名前で束ねている）。
     names = list(dict.fromkeys(request.get("agents") or ["heuristic", "jev"]))
+    goal = request.get("goal")
     config = MatchConfig(
+        game=request.get("game", "tetris"),
         seed=int(request.get("seed", 0)),
-        target_lines=int(request.get("target_lines", 20)),
-        max_pieces=int(request.get("max_pieces", 200)),
+        goal=int(goal) if goal else None,
         step_delay_ms=int(request.get("step_delay_ms", 0)),
     )
 

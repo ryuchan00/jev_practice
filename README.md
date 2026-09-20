@@ -1,16 +1,61 @@
 # jev_practice
 
 Jev（TypeSafe の **System One** モデル）と LLM（Claude Haiku 4.5）に
-同じテトリスを打たせて、**レイテンシ・コスト・判断の質**を並べて見るための練習台。
+**同じゲームの同じ局面**を打たせて、レイテンシ・コスト・判断の質を並べて見る練習台。
 
 元ネタ: [LLM と Jev のテトリス比較検証](https://zenn.dev/yrd/articles/64d4e2f4c3e71c)
 
-![ゲーム画面](docs/demo.gif)
+ゲームは 2 つある。どちらも「候補手を列挙 → 上位 12 手に絞る → どれが最善か 1 回だけ聞く」
+という同じ形に落としてあるので、**エージェントから見ると違いは state の中身だけ**。
 
-1 手ごとに盤面・使用トークン・累計コスト・レイテンシ中央値が更新される
-（[mp4 版](docs/demo.mp4)）。上の録画は `heuristic` を `step delay 110ms` で
-流したもの。jev / claude はまだアカウント側が通っていないので映っていない
-（下の「前提となるアカウント設定」を参照）。
+| | `tetris` | `match3` |
+|---|---|---|
+| 盤面 | 10×20 | 8×8・6 色 |
+| 1 手 | ミノを回して落とす | 隣り合う 2 マスを入れ替える |
+| 毎手の候補数 | 9〜34 | 10〜40 |
+| 目標 | 20 ライン | 3000 点 |
+| 効いてくる判断 | 穴を作らない、高さを抑える | 連鎖、4 つ以上の直線、手詰まりの回避 |
+
+## マッチ3
+
+![マッチ3 の画面](docs/match3.gif)
+
+（[mp4 版](docs/match3.mp4)）
+
+`R G B Y P C` の 6 色。隣り合う 2 マスを入れ替えて 3 つ以上揃えると消え、
+上から落ちてきて連鎖する。スコアは
+
+```
+score = 消した数 * 10 + (連鎖回数 - 1) * 50 + (最長の直線 - 3) * 30
+```
+
+なので、**その場で消せる数より連鎖と長い直線の方が大きい**。
+「今いちばん多く消える手」と「いちばん点が伸びる手」がずれるので、
+テトリスより候補の選り分けが効く。
+
+候補手の評価式は
+
+```
+score = 消える数 + 3*(連鎖 - 1) + 2*(最長の直線 - 3) + 0.3*(打てる手の増減)
+```
+
+最後の項は、打てる手を減らす一手を少し嫌うためのもの。
+
+> 候補の評価だけは**補充なし**で計算している。補充は乱数なので、
+> 入れてしまうと同じ盤面でも候補の順位が毎回変わってしまう。
+> 実際に打つときは補充ありで連鎖まで解決する。
+
+## テトリス
+
+![テトリスの画面](docs/tetris.gif)
+
+（[mp4 版](docs/tetris.mp4)）
+
+記事の評価式をそのまま使う。
+
+```
+score = -4*holes + 3*cleared_lines - 0.5*max_height - 0.2*bumpiness
+```
 
 ## Haiku 4.5 と Jev の比較
 
@@ -20,18 +65,16 @@ Jev（TypeSafe の **System One** モデル）と LLM（Claude Haiku 4.5）に
 |---|---|---|
 | 出力の形 | テキストを生成しない。型付きの質問に**確率つきの答え**を返す | トークンを生成する。JSON Schema で形だけ縛る |
 | 質問の型 | `choice`（択一） / `score`（段階評価） / `noul`（真偽の確率） | 任意。スキーマ次第 |
-| 1 往復で聞ける数 | 複数の質問をまとめて 1 リクエスト | 同上（ただし生成トークンとして出る） |
 | 付いてくる情報 | `confidence`、候補ごとの `probabilities` | なし（logprobs は非公開） |
 | 向く仕事 | 分類・選択・判定を高頻度で回す | 生成・説明・自由形式の推論 |
 | 向かない仕事 | 文章を書く、手順を考える | 1 手 200ms 以内の選択をゲームループで回す |
 
-テトリスの 1 手選択は「12 個の候補から 1 個選ぶ」だけなので、
+どちらのゲームも 1 手は「12 個の候補から 1 個選ぶ」だけで、
 **文章を作る能力は 1 ミリも要らない**。Jev が効くのはそういう形の仕事。
 
-### 記事で報告されている数値
+### 記事で報告されている数値（テトリス）
 
-> 以下は元記事の計測値であって、このリポジトリで測った値ではない。
-> 自分で測る手順は下の「実測する」を参照。
+> 元記事の計測値であって、このリポジトリで測った値ではない。
 
 | 指標 | Jev | Haiku 4.5 |
 |---|---|---|
@@ -48,33 +91,31 @@ Jev（TypeSafe の **System One** モデル）と LLM（Claude Haiku 4.5）に
 
 | 指標 | 意味 |
 |---|---|
-| `lines` / `pieces` | 消したライン数 / 置いたミノ数 |
+| `progress` / `turns` | 到達したライン数 or スコア / 打った手数 |
 | `median_latency_ms` | 1 手あたり API 往復の中央値 |
-| `cost_usd` | トークン使用量からの概算（Haiku はキャッシュ読み書きの割引・割増込み） |
+| `in_tok` / `out_tok` | 使用トークン（累計） |
+| `cost_usd` | 単価からの概算（Haiku はキャッシュ読み書きの割引・割増込み） |
 | `agreement` | ヒューリスティック最善手と一致した割合 |
 | `mean_regret` | 選んだ手と最善手の評価値の差の平均。0 に近いほど良い |
 | `fallbacks` | API が失敗してヒューリスティックに落ちた手数 |
 
-`fallbacks` が 0 でない行は**そのエージェントを測れていない**。
+**`fallbacks` が 0 でない行は、そのエージェントを測れていない。**
+API が落ちた手はヒューリスティック最善手に逃がして局を止めない作りなので、
 全手フォールバックすると `agreement` は 1.0、`mean_regret` は 0.0 になり、
-一見すると完璧な成績に見えてしまうので、必ずここを先に見ること。
-
-`agreement` と `mean_regret` があるので、**ライン数だけでは見えない判断の質**を
-1 局でも比べられる。
+一見すると満点に見えてしまう。必ずここを先に見ること。
 
 ## 仕組み
 
-1. 10×20 の盤面と 7-bag 乱数でミノを配る（seed 固定 = 全エージェントに同じ列）
-2. 現在のミノについて、全回転 × 全列のハードドロップ結果を列挙する
-3. 記事の評価式で上位 12 手に絞る
-   `score = -4*holes + 3*cleared - 0.5*max_height - 0.2*bumpiness`
+1. seed から初期状態を作る（同じ seed なら全エージェントに同じ局）
+2. 現在の局面で打てる手を全部並べる
+3. 評価式で上位 12 手に絞る
 4. **順番をシャッフルしてから** `A`..`L` のラベルを振る
-   （しないとラベル `A` が常に最善になり、位置バイアスだけで当たってしまう）
+   （しないとラベル `A` が常に最善になり、盤面を読まずに A と答えるだけで当たる）
 5. 各エージェントに「どれが最善か」を 1 回だけ聞く
 6. 選ばれた手を打ち、1 手ごとに WebSocket / stdout へ流す
 
-API が失敗した手は、局を止めずにヒューリスティック最善手へフォールバックする
-（`note` に `fallback: ...` が残る）。
+ゲーム側は `games.Game` の形（`start` / `candidates` / `apply` / `progress` /
+`rows` / `view`）だけを満たせばよく、ループもエージェントも中身を知らない。
 
 ## セットアップ
 
@@ -92,7 +133,7 @@ cp .env.example .env   # キーを書く
 | `jev` | `TYPESAFE_API_KEY` |
 | `claude` | `ANTHROPIC_API_KEY`、または `ant auth login` 済みのプロファイル |
 
-キーが無いエージェントは起動時に理由を出してスキップされる（他のエージェントは走る）。
+キーが無いエージェントは起動時に理由を出してスキップされる（他は走る）。
 
 #### ロリポップ！AI ゲートウェイ経由で両方まかなう
 
@@ -121,7 +162,7 @@ ACC=<accountId>; PRJ=<projectId>
 BASE=https://ai-gateway.lolipop.jp/console/v1/accounts/$ACC/projects/$PRJ
 OP=$(uuidgen); AT=$(uuidgen)
 
-# 1. 発行（この時点では blocked:true で、まだ一覧に出ない）
+# 1. 発行（この時点では blocked:true で、まだ一覧にも出ない）
 curl -s -X POST -H "Authorization: Bearer $MGMT" -H 'Content-Type: application/json' \
   -d "{\"keyAlias\":\"jev-practice\",\"expiresInDays\":30,
        \"operationId\":\"$OP\",\"attemptId\":\"$AT\",\"recovery\":false}" "$BASE/keys"
@@ -135,7 +176,7 @@ curl -s -X POST -H "Authorization: Bearer $MGMT" -H 'Content-Type: application/j
 
 **前提となるアカウント設定**（どちらも足りないと全手フォールバックになる）:
 
-- **残高**: prepaid なので、チャージが無いと推論は `402 billing_error / Insufficient balance`
+- **残高**: prepaid なので、チャージが無いと `402 billing_error / Insufficient balance`
 - **`typesafe/jev-latest` の利用許可**: 既定では
   `403 permission_error / model_not_allowed`。ダッシュボードで許可が要る
 
@@ -143,41 +184,46 @@ curl -s -X POST -H "Authorization: Bearer $MGMT" -H 'Content-Type: application/j
 
 ```bash
 # API 不要の基準線
-.venv/bin/jev-tetris --agent heuristic --games 10
+.venv/bin/jev-bench --game match3 --agent heuristic --games 10
 
 # 3 者を同じ seed で 10 局ずつ
-.venv/bin/jev-tetris --agent heuristic --agent jev --agent claude --games 10 --target-lines 20
+.venv/bin/jev-bench --game match3 --agent heuristic --agent jev --agent claude --games 10
+
+# テトリスで同じことをする
+.venv/bin/jev-bench --game tetris --agent jev --agent claude --games 10
 
 # 1 手ずつ JSON で見る
-.venv/bin/jev-tetris --agent jev --verbose
+.venv/bin/jev-bench --game match3 --agent jev --verbose
 ```
 
 ### ブラウザで 2 つの盤面を並べる
 
 ```bash
-.venv/bin/uvicorn jevtetris.server:app --reload
+.venv/bin/uvicorn jevbench.server:app --reload
 # http://127.0.0.1:8000
 ```
 
-盤面・ライン数・**使用トークン（in / out）・累計コスト**・レイテンシ中央値・
-一致率・フォールバック数がリアルタイムで並ぶ。
+盤面・手数・スコア（ライン数）・**使用トークン（in / out）・累計コスト**・
+レイテンシ中央値・一致率・フォールバック数がリアルタイムで並ぶ。
 
 `step delay (ms)` は 1 手ごとの待ち時間。`heuristic` は API を叩かないので
-既定の 0 だと一瞬で終わる。目で追いたいときや録画するときに 100 前後にする
+既定の 0 だと一瞬で終わる。目で追いたいときや録画するときに 100〜300 にする
 （CLI なら `--step-delay-ms`）。
 
 ## 構成
 
 ```
-jevtetris/
-├── tetris.py               盤面・7 種ミノ・7-bag・ハードドロップ
-├── heuristic.py            評価式と上位 12 手の絞り込み
-├── match.py                1 局を回してイベントを吐くループ
+jevbench/
+├── core.py                 候補手・決定・1 手の記録・エージェント基底
+├── match.py                1 局を回してイベントを吐くループ（ゲーム非依存）
 ├── cli.py                  CLI
 ├── server.py               FastAPI + WebSocket
 ├── static/index.html       Vanilla JS のビューア
+├── games/
+│   ├── base.py             Game プロトコル
+│   ├── tetris.py           盤面・7 種ミノ・7-bag・ハードドロップ
+│   └── match3.py           8x8・6 色・連鎖・スコア
 └── agents/
-    ├── base.py             共通インタフェース・レイテンシ / コスト集計
     ├── heuristic_agent.py  API を叩かない基準線
     ├── jev_agent.py        System One に choice + noul を 1 往復で聞く
     └── claude_agent.py     Haiku 4.5 に json_schema の enum で答えさせる
@@ -188,7 +234,7 @@ jevtetris/
 Haiku 4.5 は公表単価（入力 $1.00 / 出力 $5.00 per MTok）に、
 キャッシュ書き込み ×1.25・キャッシュ読み出し ×0.10 を掛けて積算している。
 
-Jev 側の単価は環境変数 `JEV_INPUT_PRICE` / `JEV_OUTPUT_PRICE` で差し替えられる
+Jev 側の単価は `JEV_INPUT_PRICE` / `JEV_OUTPUT_PRICE` で差し替えられる
 （既定値は暫定なので、契約した単価に合わせること）。
 
 ## テスト
@@ -197,4 +243,4 @@ Jev 側の単価は環境変数 `JEV_INPUT_PRICE` / `JEV_OUTPUT_PRICE` で差し
 .venv/bin/python -m pytest tests -q
 ```
 
-エンジンとヒューリスティックだけを見る。API は叩かないので課金されない。
+両ゲームのエンジンとループを見る。API は叩かないので課金されない。

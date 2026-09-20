@@ -1,4 +1,7 @@
-"""1 エージェントに 1 局プレイさせ、1 手ごとにイベントを吐き出すループ。"""
+"""1 エージェントに 1 局プレイさせ、1 手ごとにイベントを吐き出すループ。
+
+ゲームの中身は見ない。games.Game の形だけを使う。
+"""
 
 from __future__ import annotations
 
@@ -7,16 +10,16 @@ import time
 from dataclasses import dataclass
 from typing import Iterator
 
-from .agents.base import Agent, BaseAgent, Turn
-from .heuristic import Candidate, top_candidates
-from .tetris import Board, SevenBag, placements
+from .core import Agent, BaseAgent, Turn
+from .games import Game, build as build_game
 
 
 @dataclass
 class MatchConfig:
+    game: str = "tetris"
     seed: int = 0
-    max_pieces: int = 200
-    target_lines: int = 20
+    max_turns: int | None = None
+    goal: int | None = None
     candidate_limit: int = 12
     step_delay_ms: int = 0
     """1 手ごとに待つ時間。API が速すぎて目で追えないときの観賞用。"""
@@ -25,11 +28,15 @@ class MatchConfig:
 @dataclass
 class MatchResult:
     agent: str
-    lines: int
-    pieces: int
-    reached_target: bool
-    topped_out: bool
+    game: str
+    goal_label: str
+    progress: int
+    reached_goal: bool
+    turns: int
+    stuck: bool
     median_latency_ms: float
+    input_tokens: int
+    output_tokens: int
     cost_usd: float
     agreement: float
     mean_regret: float
@@ -38,55 +45,46 @@ class MatchResult:
 
 
 def play(agent: Agent, config: MatchConfig | None = None) -> Iterator[dict]:
-    """1 局を進めながら手ごとのイベントを yield する。最後に summary を 1 回返す。
+    """1 局を進めながら手ごとのイベントを yield し、最後に summary を 1 回返す。
 
-    seed が同じなら、どのエージェントでも同じミノ列・同じ候補ラベルになる。
+    seed が同じなら、どのエージェントでも同じ初期盤面・同じ候補ラベルになる。
     """
     cfg = config or MatchConfig()
-    meter = agent if isinstance(agent, BaseAgent) else None
-    bag = SevenBag(cfg.seed)
-    rng = random.Random(cfg.seed)
-    board = Board()
-    turns: list[Turn] = []
-    lines = 0
-    topped_out = False
+    game: Game = build_game(cfg.game)
+    goal = cfg.goal if cfg.goal is not None else game.default_goal
+    max_turns = cfg.max_turns if cfg.max_turns is not None else game.default_max_turns
 
-    for index in range(cfg.max_pieces):
-        piece = bag.next()
-        options = placements(board, piece)
-        if not options:
-            topped_out = True
+    meter = agent if isinstance(agent, BaseAgent) else None
+    rng = random.Random(cfg.seed)
+    state = game.start(cfg.seed)
+    turns: list[Turn] = []
+    stuck = False
+
+    for index in range(max_turns):
+        candidates = game.candidates(state, cfg.candidate_limit, rng)
+        if not candidates:
+            stuck = True
             break
 
-        candidates = top_candidates(options, cfg.candidate_limit, rng)
-        decision = agent.choose(board, piece, candidates)
+        decision = agent.choose(game.view(state), candidates)
         by_label = {c.label: c for c in candidates}
         chosen = by_label[decision.label]
         best = max(candidates, key=lambda c: c.score)
 
-        board = Board([list(row) for row in chosen.placement.board_after])
-        lines += chosen.placement.cleared
-
-        turn = Turn(
-            index=index,
-            piece=piece,
-            candidates=candidates,
-            decision=decision,
-            chosen=chosen,
-            best=best,
-        )
+        state = game.apply(state, chosen)
+        turn = Turn(index=index, candidates=candidates, decision=decision, chosen=chosen, best=best)
         turns.append(turn)
 
         yield {
             "type": "turn",
             "agent": getattr(agent, "name", "agent"),
+            "game": game.name,
             "index": index,
-            "piece": piece,
-            "board": board.to_rows(),
-            "lines": lines,
+            "board": game.rows(state),
+            "goal_label": game.goal_label,
+            "progress": game.progress(state),
             "chosen": chosen.label,
-            "chosen_column": chosen.placement.col,
-            "cleared": chosen.placement.cleared,
+            "chosen_summary": chosen.summary,
             "latency_ms": round(decision.latency_ms, 1),
             "confidence": decision.confidence,
             "agreed": turn.agreed_with_heuristic,
@@ -98,36 +96,40 @@ def play(agent: Agent, config: MatchConfig | None = None) -> Iterator[dict]:
             "cost_usd": round(meter.cost_usd, 6) if meter else 0.0,
         }
 
-        if lines >= cfg.target_lines:
+        if game.progress(state) >= goal:
             break
         if cfg.step_delay_ms:
             time.sleep(cfg.step_delay_ms / 1000)
 
     yield {
         "type": "summary",
-        **_summarize(agent, turns, lines, topped_out, cfg).__dict__,
+        **_summarize(agent, game, turns, game.progress(state), goal, stuck).__dict__,
     }
 
 
 def _summarize(
-    agent: Agent, turns: list[Turn], lines: int, topped_out: bool, cfg: MatchConfig
+    agent: Agent, game: Game, turns: list[Turn], progress: int, goal: int, stuck: bool
 ) -> MatchResult:
     agreed = sum(1 for t in turns if t.agreed_with_heuristic)
     regrets = [t.regret for t in turns]
     # API が落ちた手はヒューリスティックに逃がしている。全手そうなった局を
     # 「計測できた」と読み違えないよう、件数と最初の理由を残す。
-    fell_back = [t for t in turns if t.decision.note.startswith("fallback: ")]
+    fell_back = [t for t in turns if t.decision.fell_back]
     base = agent if isinstance(agent, BaseAgent) else None
     return MatchResult(
         agent=getattr(agent, "name", "agent"),
-        lines=lines,
-        pieces=len(turns),
-        reached_target=lines >= cfg.target_lines,
-        topped_out=topped_out,
+        game=game.name,
+        goal_label=game.goal_label,
+        progress=progress,
+        reached_goal=progress >= goal,
+        turns=len(turns),
+        stuck=stuck,
         median_latency_ms=round(base.median_latency_ms, 1) if base else 0.0,
+        input_tokens=base.input_tokens if base else 0,
+        output_tokens=base.output_tokens if base else 0,
         cost_usd=round(base.cost_usd, 6) if base else 0.0,
         agreement=round(agreed / len(turns), 3) if turns else 0.0,
         mean_regret=round(sum(regrets) / len(regrets), 3) if regrets else 0.0,
         fallbacks=len(fell_back),
-        fallback_reason=fell_back[0].decision.note[len("fallback: "):] if fell_back else "",
+        fallback_reason=fell_back[0].decision.fallback_reason if fell_back else "",
     )
