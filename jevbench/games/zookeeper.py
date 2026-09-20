@@ -88,6 +88,10 @@ class State:
     caught: dict[str, int] = field(default_factory=lambda: {a: 0 for a in ANIMALS})
     over: bool = False
     last_event: str = ""
+    # 直前の 1 手の見た目（UI の演出用。ルールには関係しない）。
+    before: Grid | None = None
+    swap: tuple[Cell, Cell] | None = None
+    popped: list[Cell] = field(default_factory=list)
 
     def copy_grid(self) -> list[list[str]]:
         return [list(row) for row in self.grid]
@@ -165,6 +169,8 @@ class Clear:
     caught: dict[str, int] = field(default_factory=dict)
     cascades: int = 0
     longest: int = 0
+    first_cells: list[Cell] = field(default_factory=list)
+    """最初の連鎖で消えたマス。UI の消える演出に使う。"""
 
     @property
     def total(self) -> int:
@@ -184,6 +190,8 @@ def resolve(grid: list[list[str]], rng: random.Random | None = None) -> Clear:
             break
         out.longest = max(out.longest, _longest_run(grid, hit))
         out.cascades += 1
+        if not out.first_cells:
+            out.first_cells = sorted(hit)
         for r, c in hit:
             animal = ANIMAL_OF[grid[r][c]]
             out.caught[animal] = out.caught.get(animal, 0) + 1
@@ -295,7 +303,10 @@ class ZooKeeper:
 
     def apply(self, state: State, candidate: Candidate) -> State:
         a, b = candidate.move
-        grid = _swapped(state.copy_grid(), a, b)
+        # 入れ替え直後（まだ何も消えていない）を演出用に取っておく。
+        swapped = _swapped(state.copy_grid(), a, b)
+        before = _freeze(swapped)
+        grid = [row[:] for row in swapped]
         clear = resolve(grid, state.rng)
 
         caught = dict(state.caught)
@@ -333,6 +344,9 @@ class ZooKeeper:
             caught=caught,
             over=timer <= 0,
             last_event=" + ".join(notes),
+            before=before,
+            swap=(a, b),
+            popped=clear.first_cells,
         )
 
     def progress(self, state: State) -> int:
@@ -371,4 +385,9 @@ class ZooKeeper:
             "codes": {a: CODE_OF[a] for a in ANIMALS},
             "over": state.over,
             "event": state.last_event,
+            "effects": {
+                "before": ["".join(row) for row in state.before] if state.before else None,
+                "swap": [list(state.swap[0]), list(state.swap[1])] if state.swap else None,
+                "popped": [list(c) for c in state.popped],
+            },
         }
