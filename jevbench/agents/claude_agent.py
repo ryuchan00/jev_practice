@@ -30,9 +30,6 @@ You are given the current board, its stats, and a list of candidate moves.
 Each candidate has a label and the effect of playing it. Pick the single
 best label.
 
-Prefer moves that score the most now without leaving the board in a worse
-shape for later turns.
-
 Answer with the label only, e.g. `G`. When a required JSON schema is enforced,
 use that format. Do not explain."""
 

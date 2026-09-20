@@ -55,3 +55,9 @@ def test_apply_advances_the_piece_and_the_line_count():
     after = game.apply(state, candidates[0])
     assert after.turn == state.turn + 1
     assert after.piece and after.lines >= state.lines
+
+
+def test_view_carries_a_non_empty_objective():
+    game = Tetris()
+    state = game.start(seed=4)
+    assert game.view(state)["objective"]

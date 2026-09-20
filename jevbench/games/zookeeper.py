@@ -89,7 +89,8 @@ class State:
     over: bool = False
     last_event: str = ""
     # 直前の 1 手の見た目（UI の演出用。ルールには関係しない）。
-    before: Grid | None = None
+    before_swap: Grid | None = None
+    after_swap: Grid | None = None
     swap: tuple[Cell, Cell] | None = None
     popped: list[Cell] = field(default_factory=list)
 
@@ -311,9 +312,10 @@ class ZooKeeper:
 
     def apply(self, state: State, candidate: Candidate) -> State:
         a, b = candidate.move
-        # 入れ替え直後（まだ何も消えていない）を演出用に取っておく。
+        # 消えた後の盤面からは移動元を復元できないので、両側を残す。
+        before_swap = state.grid
         swapped = _swapped(state.copy_grid(), a, b)
-        before = _freeze(swapped)
+        after_swap = _freeze(swapped)
         grid = [row[:] for row in swapped]
         clear = resolve(grid, state.rng)
 
@@ -352,7 +354,8 @@ class ZooKeeper:
             caught=caught,
             over=timer <= 0,
             last_event=" + ".join(notes),
-            before=before,
+            before_swap=before_swap,
+            after_swap=after_swap,
             swap=(a, b),
             popped=clear.first_cells,
         )
@@ -366,15 +369,22 @@ class ZooKeeper:
     def rows(self, state: State) -> list[str]:
         return ["".join(row) for row in state.grid]
 
+    def objective(self, state: State) -> str:
+        return (
+            f"Choose the candidate that helps meet the quota of {state.quota} for EVERY "
+            "species, because the level clears only when every species quota is met and "
+            "catching a species whose quota is already met is worth little. Cascades and "
+            "longer lines score more and restore more timer; the timer drops every turn "
+            "and ends the game at zero. Prefer leaving more moves available to avoid "
+            "being stranded."
+        )
+
     def view(self, state: State) -> dict[str, Any]:
         return {
             "board": self.rows(state),
             "legend": {CODE_OF[a]: a for a in ANIMALS}
             | {"_note": f"{SIZE}x{SIZE} grid, (row, col), row 0 is the top."},
-            "goal": (
-                f"Catch {state.quota} of EVERY animal to clear the level. "
-                "The timer drops every turn and is restored by catching animals."
-            ),
+            "objective": self.objective(state),
             "stats": {
                 "level": state.level,
                 "score": state.score,
@@ -397,7 +407,12 @@ class ZooKeeper:
             "over": state.over,
             "event": state.last_event,
             "effects": {
-                "before": ["".join(row) for row in state.before] if state.before else None,
+                "before_swap": (
+                    ["".join(row) for row in state.before_swap] if state.before_swap else None
+                ),
+                "after_swap": (
+                    ["".join(row) for row in state.after_swap] if state.after_swap else None
+                ),
                 "swap": [list(state.swap[0]), list(state.swap[1])] if state.swap else None,
                 "popped": [list(c) for c in state.popped],
             },

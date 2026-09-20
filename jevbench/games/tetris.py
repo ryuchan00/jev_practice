@@ -266,12 +266,19 @@ class Tetris:
     def rows(self, state: State) -> list[str]:
         return state.board.to_rows()
 
+    def objective(self, state: State) -> str:
+        return (
+            "Choose the candidate that clears lines, avoids creating holes, and keeps "
+            "the stack low and flat."
+        )
+
     def view(self, state: State) -> dict[str, Any]:
         board = state.board
         return {
             "board": self.rows(state),
             "current_piece": state.piece,
             "legend": "'.' is empty, a letter is a settled block. Row 0 is the top.",
+            "objective": self.objective(state),
             "stats": {
                 "holes": board.holes(),
                 "max_height": board.max_height(),

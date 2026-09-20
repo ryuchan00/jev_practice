@@ -31,6 +31,9 @@ class Game(Protocol):
     def rows(self, state: Any) -> list[str]:
         """UI に出す盤面。1 要素 1 行。"""
 
+    def objective(self, state: Any) -> str:
+        """候補ラベルを選ぶモデルに、このゲームで目指すことを伝える。"""
+
     def view(self, state: Any) -> dict[str, Any]:
         """モデルに渡す state。盤面・凡例・統計を JSON で。"""
 

@@ -47,9 +47,12 @@
   .zoo .cell img { width:78%; height:78%; display:block; }
   /* 入れ替えた 2 匹と、そのあと消える 3 匹以上を見せる */
   .zoo .cell.swap { outline:2px solid var(--accent); outline-offset:-2px; }
-  .zoo .cell.pop { animation: pop .34s ease-out forwards; }
+  .zoo .cell.moving img { position:relative; z-index:1;
+                          transform:translate(var(--dx), var(--dy));
+                          transition:transform 220ms ease-in-out; }
+  .zoo .cell.pop { animation: pop .24s ease-out forwards; }
   .zoo .cell.pop::after { content:""; position:absolute; inset:0; border-radius:50%;
-                          box-shadow:0 0 0 0 var(--warn); animation: ring .34s ease-out forwards; }
+                          box-shadow:0 0 0 0 var(--warn); animation: ring .24s ease-out forwards; }
   .zoo .cell { position:relative; }
   @keyframes pop {
     0%   { transform:scale(1);    background:#232936; }
@@ -128,7 +131,7 @@ function panel(agent) {
     el,
     q: k => el.querySelector(`[data-k="${k}"]`),
     set(k, v) { const n = this.q(k); if (n) n.textContent = v; },
-    latencies: [], fallbacks: 0, progress: 0, popTimer: null,
+    latencies: [], fallbacks: 0, progress: 0, boardTimers: [], boardFrame: null,
   };
   panels.set(agent, p);
   return p;
@@ -143,36 +146,73 @@ function renderZoo(rows, marks) {
     const cls = ["cell", swap.has(key) ? "swap" : "", pop.has(key) ? "pop" : ""]
       .filter(Boolean).join(" ");
     return animal
-      ? `<div class="${cls}"><img src="${ICON[animal]}" alt="${animal}"></div>`
-      : `<div class="${cls}"></div>`;
+      ? `<div class="${cls}" data-cell="${key}"><img src="${ICON[animal]}" alt="${animal}"></div>`
+      : `<div class="${cls}" data-cell="${key}"></div>`;
   }));
   return `<div class="zoo">${cells.join("")}</div>`;
 }
 
-const POP_MS = 340;
+const BEFORE_MS = 80;
+const SWAP_MS = 220;
+const POP_MS = 240;
 
-/** 入れ替え -> 消える演出 -> 落ちてきた盤面、の順に見せる。 */
+function cancelBoardAnimation(p) {
+  p.boardTimers.forEach(clearTimeout);
+  p.boardTimers = [];
+  if (p.boardFrame !== null) cancelAnimationFrame(p.boardFrame);
+  p.boardFrame = null;
+}
+
+function later(p, fn, ms) {
+  const timer = setTimeout(fn, ms);
+  p.boardTimers.push(timer);
+}
+
+function moveSwapIcons(p, swap) {
+  const board = p.q("board");
+  const [a, b] = swap;
+  const cells = [a, b].map(([r, c]) => board.querySelector(`[data-cell="${r},${c}"]`));
+  if (cells.some(cell => !cell)) return;
+  const rects = cells.map(cell => cell.getBoundingClientRect());
+  cells.forEach((cell, i) => {
+    const other = rects[1 - i];
+    cell.style.setProperty("--dx", `${other.left - rects[i].left}px`);
+    cell.style.setProperty("--dy", `${other.top - rects[i].top}px`);
+    cell.classList.add("moving");
+  });
+}
+
+/** 選んだ手を読む時間を残してから、捕獲へつなぐ。 */
 function showBoard(p, msg) {
   const hud = msg.hud;
+  cancelBoardAnimation(p);
   if (hud.kind !== "zookeeper") {
     p.q("board").innerHTML = renderText(msg.board);
     return;
   }
   const fx = hud.effects ?? {};
-  clearTimeout(p.popTimer);
-  if (fx.before && fx.popped?.length) {
-    // まず入れ替えた直後の盤面を、消える 3 匹に印をつけて出す。
-    p.q("board").innerHTML = renderZoo(fx.before, fx);
-    p.popTimer = setTimeout(() => {
-      p.q("board").innerHTML = renderZoo(msg.board);
-    }, POP_MS);
+  if (fx.before_swap && fx.after_swap && fx.swap?.length === 2) {
+    p.q("board").innerHTML = renderZoo(fx.before_swap, {swap: fx.swap});
+    later(p, () => {
+      // レイアウト確定後に距離を測るため、セル幅や gap が変わってもずれない。
+      p.boardFrame = requestAnimationFrame(() => {
+        p.boardFrame = null;
+        moveSwapIcons(p, fx.swap);
+      });
+      later(p, () => {
+        p.q("board").innerHTML = renderZoo(fx.after_swap, fx);
+        later(p, () => {
+          p.q("board").innerHTML = renderZoo(msg.board);
+        }, POP_MS);
+      }, SWAP_MS);
+    }, BEFORE_MS);
   } else {
     p.q("board").innerHTML = renderZoo(msg.board);
   }
 }
 
 function showInitialBoard(p, msg) {
-  clearTimeout(p.popTimer);
+  cancelBoardAnimation(p);
   p.q("board").innerHTML = msg.hud.kind === "zookeeper"
     ? renderZoo(msg.board)
     : renderText(msg.board);

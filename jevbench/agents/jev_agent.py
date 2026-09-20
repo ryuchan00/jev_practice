@@ -16,13 +16,6 @@ from ..core import BaseAgent, Candidate, Decision, fallback
 DEFAULT_INPUT_PRICE = float(os.environ.get("JEV_INPUT_PRICE", "0.10"))
 DEFAULT_OUTPUT_PRICE = float(os.environ.get("JEV_OUTPUT_PRICE", "0.40"))
 
-INSTRUCTIONS = (
-    "Which candidate placement is the best move? "
-    "Prefer moves that clear lines, create no new holes, "
-    "and keep the stack low and flat."
-)
-
-
 class JevAgent(BaseAgent):
     name = "jev"
 
@@ -51,7 +44,12 @@ class JevAgent(BaseAgent):
             res = self.client.system_one(
                 state=state,
                 questions={
-                    "best": Choice(instructions=INSTRUCTIONS, criteria=criteria),
+                    "best": Choice(
+                        instructions=(
+                            "Which candidate is the best move? " + state["objective"]
+                        ),
+                        criteria=criteria,
+                    ),
                     "urgent": Noul(instructions="Is the board in a bad shape?"),
                 },
             )

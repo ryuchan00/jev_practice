@@ -90,6 +90,15 @@ def test_quota_and_drain_grow_with_the_level():
     assert drain_for(2) > drain_for(1)
 
 
+def test_objective_explains_that_every_species_quota_is_required():
+    game = ZooKeeper()
+    state = game.start(seed=1)
+    objective = game.objective(state)
+    assert "quota" in objective.lower()
+    assert "every species" in objective.lower()
+    assert game.view(state)["objective"] == objective
+
+
 def test_points_reward_cascades_and_long_lines():
     from jevbench.games.zookeeper import Clear
 
@@ -147,6 +156,22 @@ def test_hud_carries_what_the_viewer_needs(seed):
     assert set(hud["caught"]) == set(ANIMALS)
     assert set(hud["codes"]) == set(ANIMALS)
     assert 0 < hud["timer"] <= hud["timer_max"]
+
+
+def test_hud_carries_both_sides_of_the_last_swap():
+    game = ZooKeeper()
+    state = game.start(seed=0)
+    original = game.rows(state)
+    candidate = game.candidates(state, 12, random.Random(0))[0]
+    a, b = candidate.move
+
+    hud = game.hud(game.apply(state, candidate))
+    effects = hud["effects"]
+    assert effects["before_swap"] == original
+    assert effects["swap"] == [list(a), list(b)]
+    assert effects["after_swap"][a[0]][a[1]] == original[b[0]][b[1]]
+    assert effects["after_swap"][b[0]][b[1]] == original[a[0]][a[1]]
+    assert effects["popped"]
 
 
 def test_a_pre_existing_match_elsewhere_does_not_make_every_swap_legal():
