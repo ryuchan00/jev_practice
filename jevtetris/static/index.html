@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>jev tetris</title>
+<style>
+  :root { color-scheme: dark; --bg:#111318; --panel:#1b1f27; --line:#2b313d; --fg:#e6e9ef; --dim:#8b93a3; }
+  body { margin:0; padding:24px 16px; background:var(--bg); color:var(--fg);
+         font:14px/1.6 ui-monospace, SFMono-Regular, Menlo, monospace; }
+  h1 { font-size:18px; margin:0 0 16px; }
+  form { display:flex; gap:12px; flex-wrap:wrap; align-items:flex-end; margin-bottom:20px; }
+  label { display:flex; flex-direction:column; gap:4px; font-size:12px; color:var(--dim); }
+  input, select, button { background:var(--panel); color:var(--fg); border:1px solid var(--line);
+                          border-radius:6px; padding:6px 10px; font:inherit; }
+  button { cursor:pointer; }
+  button:disabled { opacity:.5; cursor:default; }
+  .boards { display:flex; gap:20px; flex-wrap:wrap; }
+  .board { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:14px; min-width:260px; }
+  .board h2 { font-size:14px; margin:0 0 10px; }
+  .grid { line-height:1.05; letter-spacing:2px; white-space:pre; font-size:15px; }
+  .grid .empty { color:#2a2f3a; }
+  dl { display:grid; grid-template-columns:auto auto; gap:2px 12px; margin:12px 0 0; font-size:12px; }
+  dt { color:var(--dim); } dd { margin:0; text-align:right; }
+  .err { color:#ff8f8f; font-size:12px; margin-top:8px; }
+</style>
+</head>
+<body>
+<h1>jev tetris — System One vs LLM</h1>
+
+<form id="controls">
+  <label>agent A <select id="agentA"></select></label>
+  <label>agent B <select id="agentB"></select></label>
+  <label>seed <input id="seed" type="number" value="0" style="width:80px"></label>
+  <label>target lines <input id="lines" type="number" value="20" style="width:80px"></label>
+  <button id="start" type="submit">start</button>
+</form>
+
+<div class="boards" id="boards"></div>
+
+<script>
+const EMPTY_ROW = ".".repeat(10);
+const boards = document.getElementById("boards");
+const panels = new Map();
+
+function panel(agent) {
+  if (panels.has(agent)) return panels.get(agent);
+  const el = document.createElement("div");
+  el.className = "board";
+  el.innerHTML = `<h2>${agent}</h2>
+    <div class="grid"></div>
+    <dl>
+      <dt>pieces</dt><dd data-k="pieces">0</dd>
+      <dt>lines</dt><dd data-k="lines">0</dd>
+      <dt>latency (median)</dt><dd data-k="latency">–</dd>
+      <dt>agreement</dt><dd data-k="agreement">–</dd>
+      <dt>cost (USD)</dt><dd data-k="cost">–</dd>
+    </dl>
+    <div class="err" data-k="err"></div>`;
+  el.querySelector(".grid").innerHTML = renderRows(Array(20).fill(EMPTY_ROW));
+  boards.appendChild(el);
+  const p = {
+    el,
+    grid: el.querySelector(".grid"),
+    set(k, v) { el.querySelector(`[data-k="${k}"]`).textContent = v; },
+    latencies: [],
+  };
+  panels.set(agent, p);
+  return p;
+}
+
+function renderRows(rows) {
+  return rows.map(row =>
+    [...row].map(c => c === "." ? '<span class="empty">.</span>' : c).join("")
+  ).join("\n");
+}
+
+function median(xs) {
+  if (!xs.length) return 0;
+  const s = [...xs].sort((a, b) => a - b);
+  const m = s.length >> 1;
+  return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
+}
+
+async function loadAgents() {
+  const { agents } = await (await fetch("/agents")).json();
+  for (const [id, preset] of [["agentA", "jev"], ["agentB", "claude"]]) {
+    const sel = document.getElementById(id);
+    sel.innerHTML = agents.map(a => `<option ${a === preset ? "selected" : ""}>${a}</option>`).join("");
+  }
+}
+
+document.getElementById("controls").addEventListener("submit", ev => {
+  ev.preventDefault();
+  const button = document.getElementById("start");
+  button.disabled = true;
+  boards.innerHTML = "";
+  panels.clear();
+
+  const agents = [document.getElementById("agentA").value, document.getElementById("agentB").value];
+  agents.forEach(panel);
+
+  const ws = new WebSocket(`ws://${location.host}/ws`);
+  ws.onopen = () => ws.send(JSON.stringify({
+    agents,
+    seed: Number(document.getElementById("seed").value),
+    target_lines: Number(document.getElementById("lines").value),
+  }));
+
+  ws.onmessage = e => {
+    const msg = JSON.parse(e.data);
+    if (msg.type === "done") { button.disabled = false; ws.close(); return; }
+    const p = panel(msg.agent);
+    if (msg.type === "error") { p.set("err", msg.message); return; }
+    if (msg.type === "turn") {
+      p.grid.innerHTML = renderRows(msg.board);
+      p.set("pieces", msg.index + 1);
+      p.set("lines", msg.lines);
+      p.latencies.push(msg.latency_ms);
+      p.set("latency", `${Math.round(median(p.latencies))} ms`);
+    }
+    if (msg.type === "summary") {
+      p.set("agreement", `${Math.round(msg.agreement * 100)} %`);
+      p.set("cost", `$${msg.cost_usd.toFixed(4)}`);
+      p.set("latency", `${Math.round(msg.median_latency_ms)} ms`);
+    }
+  };
+
+  ws.onclose = () => { button.disabled = false; };
+});
+
+loadAgents();
+</script>
+</body>
+</html>
