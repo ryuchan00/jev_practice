@@ -19,7 +19,7 @@ COLUMNS = [
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="jev-bench", description=__doc__)
-    parser.add_argument("--game", choices=GAME_NAMES, default="tetris")
+    parser.add_argument("--game", choices=GAME_NAMES, default="zookeeper")
     parser.add_argument(
         "--agent", action="append", choices=AGENT_NAMES,
         help="走らせるエージェント（複数指定可）。既定は heuristic のみ。",

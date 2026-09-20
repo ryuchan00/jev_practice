@@ -5,45 +5,68 @@ Jev（TypeSafe の **System One** モデル）と LLM（Claude Haiku 4.5）に
 
 元ネタ: [LLM と Jev のテトリス比較検証](https://zenn.dev/yrd/articles/64d4e2f4c3e71c)
 
+![jev と claude を左右に並べた画面](docs/zookeeper.gif)
+
+（[mp4 版](docs/zookeeper.mp4) / [静止画](docs/zookeeper.png)）
+
+**左が jev、右が claude。**同じ seed・同じ盤面・同じ候補手を配り、違うのは
+「どれが最善か」を誰に聞くかだけ。盤面の下にレベル・スコア・タイマー・動物ごとの
+ノルマ・使用トークン・累計コスト・レイテンシ中央値・フォールバック数が並ぶ。
+
+> 枠が緑の `lead` は**その時点で先行している方**。2 枚は実時間で並走するので、
+> 速いエージェントほど同じ瞬間には先に進んでいる。最終的な優劣は
+> 走り終わりの summary（`agreement` / `mean_regret` / `cost_usd`）で見ること。
+
 ゲームは 2 つある。どちらも「候補手を列挙 → 上位 12 手に絞る → どれが最善か 1 回だけ聞く」
 という同じ形に落としてあるので、**エージェントから見ると違いは state の中身だけ**。
 
-| | `tetris` | `match3` |
+| | `zookeeper` | `tetris` |
 |---|---|---|
-| 盤面 | 10×20 | 8×8・6 色 |
-| 1 手 | ミノを回して落とす | 隣り合う 2 マスを入れ替える |
-| 毎手の候補数 | 9〜34 | 10〜40 |
-| 目標 | 20 ライン | 3000 点 |
-| 効いてくる判断 | 穴を作らない、高さを抑える | 連鎖、4 つ以上の直線、手詰まりの回避 |
+| 盤面 | 8×8・動物 7 種 | 10×20 |
+| 1 手 | 隣り合う 2 匹を入れ替える | ミノを回して落とす |
+| 毎手の候補数 | 3〜30 | 9〜34 |
+| 目標 | レベル 3 到達 | 20 ライン |
+| 効いてくる判断 | **まだ足りない動物を狙う**、連鎖、手詰まり回避 | 穴を作らない、高さを抑える |
 
-## マッチ3
+## ズーキーパー
 
-![マッチ3 の画面](docs/match3.gif)
+本家 [ZOO KEEPER](https://ja.wikipedia.org/wiki/ZOO_KEEPER_(%E3%82%B2%E3%83%BC%E3%83%A0))
+（KITERETSU / ROBOT, 2003）のルールに寄せてある。
 
-（[mp4 版](docs/match3.mp4)）
+- 8×8 に **7 種の動物**（ゾウ・キリン・ワニ・パンダ・カバ・サル・ライオン）
+- 隣り合う 2 匹を入れ替え、縦か横に 3 匹以上並ぶと消える
+- **入れ替えても消せない手はそもそも打てない**（本家と同じ。候補手に出てこない）
+- 消えると上から落ちてきて連鎖する
+- 動物を捕獲すると**タイマーが回復**し、1 手ごとに減る。0 でゲームオーバー
+- **全種**のノルマを満たすとレベルアップ。レベルが上がるほどタイマーの減りが速くなる
+- どう動かしても消せなくなったら盤面を総入れ替え（ボーナス点とタイマー回復つき）
 
-`R G B Y P C` の 6 色。隣り合う 2 マスを入れ替えて 3 つ以上揃えると消え、
-上から落ちてきて連鎖する。スコアは
+### なぜこれをベンチにするか
+
+ノルマが「全種いくつずつ」なので、**一番多く消える手が正解とは限らない**。
+ライオンのノルマは終わっていてワニが残っているなら、6 匹のライオンより
+3 匹のワニを消す手の方が価値がある。素点だけでは候補の順位が決まらないので、
+テトリスより「どれが最善か」の判断が効く。
+
+候補手の評価式:
 
 ```
-score = 消した数 * 10 + (連鎖回数 - 1) * 50 + (最長の直線 - 3) * 30
+score = 2.0*(まだ足りない動物を消す数)   # ノルマに効く分
+      + 0.4*(ノルマ達成済みの動物を消す数) # 余剰はおまけ
+      + 3.0*(連鎖 - 1)
+      + 2.0*(最長の直線 - 3)
+      + 0.3*(打てる手の増減)              # 総入れ替えに追い込まれる手は少し嫌う
 ```
-
-なので、**その場で消せる数より連鎖と長い直線の方が大きい**。
-「今いちばん多く消える手」と「いちばん点が伸びる手」がずれるので、
-テトリスより候補の選り分けが効く。
-
-候補手の評価式は
-
-```
-score = 消える数 + 3*(連鎖 - 1) + 2*(最長の直線 - 3) + 0.3*(打てる手の増減)
-```
-
-最後の項は、打てる手を減らす一手を少し嫌うためのもの。
 
 > 候補の評価だけは**補充なし**で計算している。補充は乱数なので、
-> 入れてしまうと同じ盤面でも候補の順位が毎回変わってしまう。
-> 実際に打つときは補充ありで連鎖まで解決する。
+> 入れてしまうと同じ盤面でも候補の順位が毎回変わり、`agreement` や
+> `mean_regret` が指標として使えなくなる。実際に打つときは補充あり・連鎖ありで解決する。
+
+### 動物アイコン
+
+[Twemoji](https://github.com/jdecked/twemoji)（CC-BY 4.0, © Twitter, Inc and other
+contributors）を丸く敷いている。ファイルと対応は
+[`jevbench/static/animals/LICENSE.md`](jevbench/static/animals/LICENSE.md)。
 
 ## テトリス
 
@@ -91,7 +114,7 @@ score = -4*holes + 3*cleared_lines - 0.5*max_height - 0.2*bumpiness
 
 | 指標 | 意味 |
 |---|---|
-| `progress` / `turns` | 到達したライン数 or スコア / 打った手数 |
+| `progress` / `turns` | 到達したレベル or ライン数 / 打った手数 |
 | `median_latency_ms` | 1 手あたり API 往復の中央値 |
 | `in_tok` / `out_tok` | 使用トークン（累計） |
 | `cost_usd` | 単価からの概算（Haiku はキャッシュ読み書きの割引・割増込み） |
@@ -184,16 +207,16 @@ curl -s -X POST -H "Authorization: Bearer $MGMT" -H 'Content-Type: application/j
 
 ```bash
 # API 不要の基準線
-.venv/bin/jev-bench --game match3 --agent heuristic --games 10
+.venv/bin/jev-bench --agent heuristic --games 10
 
-# 3 者を同じ seed で 10 局ずつ
-.venv/bin/jev-bench --game match3 --agent heuristic --agent jev --agent claude --games 10
+# jev と claude を同じ seed で 10 局ずつ
+.venv/bin/jev-bench --agent jev --agent claude --games 10
 
 # テトリスで同じことをする
 .venv/bin/jev-bench --game tetris --agent jev --agent claude --games 10
 
 # 1 手ずつ JSON で見る
-.venv/bin/jev-bench --game match3 --agent jev --verbose
+.venv/bin/jev-bench --agent jev --verbose
 ```
 
 ### ブラウザで 2 つの盤面を並べる
@@ -203,8 +226,9 @@ curl -s -X POST -H "Authorization: Bearer $MGMT" -H 'Content-Type: application/j
 # http://127.0.0.1:8000
 ```
 
-盤面・手数・スコア（ライン数）・**使用トークン（in / out）・累計コスト**・
-レイテンシ中央値・一致率・フォールバック数がリアルタイムで並ぶ。
+左右に 1 枚ずつパネルが出て、盤面・レベル・スコア・タイマー・動物ごとのノルマ・
+**使用トークン（in / out）・累計コスト**・レイテンシ中央値・一致率・
+フォールバック数がリアルタイムで並ぶ。
 
 `step delay (ms)` は 1 手ごとの待ち時間。`heuristic` は API を叩かないので
 既定の 0 だと一瞬で終わる。目で追いたいときや録画するときに 100〜300 にする
@@ -219,10 +243,11 @@ jevbench/
 ├── cli.py                  CLI
 ├── server.py               FastAPI + WebSocket
 ├── static/index.html       Vanilla JS のビューア
+├── static/animals/         動物アイコン（Twemoji, CC-BY 4.0）
 ├── games/
 │   ├── base.py             Game プロトコル
-│   ├── tetris.py           盤面・7 種ミノ・7-bag・ハードドロップ
-│   └── match3.py           8x8・6 色・連鎖・スコア
+│   ├── zookeeper.py        8x8・動物 7 種・ノルマ・タイマー・連鎖
+│   └── tetris.py           盤面・7 種ミノ・7-bag・ハードドロップ
 └── agents/
     ├── heuristic_agent.py  API を叩かない基準線
     ├── jev_agent.py        System One に choice + noul を 1 往復で聞く

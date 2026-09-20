@@ -275,3 +275,14 @@ class Tetris:
                 "lines": state.lines,
             },
         }
+
+    def hud(self, state: State) -> dict[str, Any]:
+        board = state.board
+        return {
+            "kind": "tetris",
+            "lines": state.lines,
+            "next_piece": state.piece,
+            "holes": board.holes(),
+            "max_height": board.max_height(),
+            "over": False,
+        }

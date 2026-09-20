@@ -30,3 +30,6 @@ class Game(Protocol):
 
     def view(self, state: Any) -> dict[str, Any]:
         """モデルに渡す state。盤面・凡例・統計を JSON で。"""
+
+    def hud(self, state: Any) -> dict[str, Any]:
+        """UI に出す、そのゲーム固有の数字（レベル・タイマー・ノルマなど）。"""

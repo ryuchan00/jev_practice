@@ -56,7 +56,7 @@ def test_fallback_is_visible_in_the_summary():
             best = max(candidates, key=lambda c: c.score)
             return Decision(label=best.label, latency_ms=0.0, note="fallback: boom")
 
-    summary = list(play(Broken(), MatchConfig(game="match3", seed=1)))[-1]
+    summary = list(play(Broken(), MatchConfig(game="zookeeper", seed=1, goal=2)))[-1]
     assert summary["fallbacks"] == summary["turns"] > 0
     assert summary["fallback_reason"] == "boom"
     # 全手フォールバックでも agreement は満点に見える。だから fallbacks を見る。

@@ -16,7 +16,7 @@ from .games import Game, build as build_game
 
 @dataclass
 class MatchConfig:
-    game: str = "tetris"
+    game: str = "zookeeper"
     seed: int = 0
     max_turns: int | None = None
     goal: int | None = None
@@ -83,6 +83,7 @@ def play(agent: Agent, config: MatchConfig | None = None) -> Iterator[dict]:
             "board": game.rows(state),
             "goal_label": game.goal_label,
             "progress": game.progress(state),
+            "hud": game.hud(state),
             "chosen": chosen.label,
             "chosen_summary": chosen.summary,
             "latency_ms": round(decision.latency_ms, 1),
@@ -97,6 +98,9 @@ def play(agent: Agent, config: MatchConfig | None = None) -> Iterator[dict]:
         }
 
         if game.progress(state) >= goal:
+            break
+        if game.hud(state).get("over"):
+            stuck = True
             break
         if cfg.step_delay_ms:
             time.sleep(cfg.step_delay_ms / 1000)

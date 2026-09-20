@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 from pathlib import Path
+from typing import Any
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
@@ -12,6 +13,7 @@ from fastapi.staticfiles import StaticFiles
 
 from .agents import AGENT_NAMES, build
 from .games import GAME_NAMES
+from .games.zookeeper import CODE_OF
 from .match import MatchConfig, play
 
 STATIC_DIR = Path(__file__).parent / "static"
@@ -26,8 +28,12 @@ async def index() -> FileResponse:
 
 
 @app.get("/agents")
-async def agents() -> dict[str, list[str]]:
-    return {"agents": list(AGENT_NAMES), "games": list(GAME_NAMES)}
+async def agents() -> dict[str, Any]:
+    return {
+        "agents": list(AGENT_NAMES),
+        "games": list(GAME_NAMES),
+        "animal_codes": CODE_OF,
+    }
 
 
 async def _run_agent(name: str, config: MatchConfig, send) -> None:
@@ -76,7 +82,7 @@ async def ws(websocket: WebSocket) -> None:
     names = list(dict.fromkeys(request.get("agents") or ["heuristic", "jev"]))
     goal = request.get("goal")
     config = MatchConfig(
-        game=request.get("game", "tetris"),
+        game=request.get("game", "zookeeper"),
         seed=int(request.get("seed", 0)),
         goal=int(goal) if goal else None,
         step_delay_ms=int(request.get("step_delay_ms", 0)),
