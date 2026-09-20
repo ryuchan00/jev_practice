@@ -5,7 +5,7 @@ from __future__ import annotations
 from .base import Agent, BaseAgent, Decision, Turn
 from .heuristic_agent import HeuristicAgent
 
-AGENT_NAMES = ("heuristic", "jev", "claude")
+AGENT_NAMES = ("heuristic", "jev", "claude", "operator")
 
 
 def build(name: str) -> Agent:
@@ -19,6 +19,10 @@ def build(name: str) -> Agent:
         from .claude_agent import ClaudeAgent
 
         return ClaudeAgent()
+    if name == "operator":
+        from .operator_agent import OperatorAgent
+
+        return OperatorAgent()
     raise ValueError(f"unknown agent: {name} (expected one of {', '.join(AGENT_NAMES)})")
 
 

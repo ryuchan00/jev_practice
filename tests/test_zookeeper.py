@@ -147,3 +147,58 @@ def test_hud_carries_what_the_viewer_needs(seed):
     assert set(hud["caught"]) == set(ANIMALS)
     assert set(hud["codes"]) == set(ANIMALS)
     assert 0 < hud["timer"] <= hud["timer_max"]
+
+
+def test_a_pre_existing_match_elsewhere_does_not_make_every_swap_legal():
+    """手の判定は「入れ替えた 2 マス自身が並ぶか」で行う。
+
+    候補手の評価に使う補充なしの盤面には、まだ消えていない並びが残ることが
+    ある。盤面のどこかに並びがあるかで判定すると、その残骸のせいでほぼ全部の
+    入れ替えが合法手に見えてしまう。
+    """
+    grid = _grid([
+        "CCCMPMLE",   # 左上に消え残りの並びがある
+        "EGCPHMLE", "GCPHMLEG", "PHMLEGCP",
+        "HMLEGCPH", "MLEGCPHM", "LEGCPHML", "EGCPHMLE",
+    ])
+    assert _matches(grid), "前提: 盤面には並びが残っている"
+    moves = legal_moves(grid)
+    assert len(moves) < 20, f"残骸のせいで手が水増しされている: {len(moves)}"
+    for a, b in moves:
+        work = [row[:] for row in grid]
+        work[a[0]][a[1]], work[b[0]][b[1]] = work[b[0]][b[1]], work[a[0]][a[1]]
+        hit = _matches(work)
+        assert a in hit or b in hit, "入れ替えた側が並びに入っていない"
+
+
+def test_a_swap_with_an_empty_cell_is_not_a_move():
+    grid = _grid(SETTLED)
+    grid[0][0] = ""
+    assert all(
+        (0, 0) not in (a, b) for a, b in legal_moves(grid)
+    ), "補充前の空マスとの入れ替えは手ではない"
+
+
+def test_moves_after_tracks_the_real_next_position():
+    """候補が名乗る moves_after は、実際に打った後の手数と噛み合っていること。
+
+    補充なしの盤面で測るので完全一致はしないが、桁が違ってはいけない。
+    ここが壊れると jev / LLM に嘘の数字を見せることになる。
+    """
+    game = ZooKeeper()
+    gaps = []
+    for seed in range(4):
+        state = game.start(seed)
+        rng = random.Random(seed)
+        for _ in range(12):
+            candidates = game.candidates(state, 12, rng)
+            if not candidates:
+                break
+            pick = max(candidates, key=lambda c: c.score)
+            predicted = pick.detail["moves_after"]
+            state = game.apply(state, pick)
+            gaps.append(abs(predicted - len(legal_moves(state.copy_grid()))))
+            if state.over:
+                break
+    assert gaps
+    assert sum(gaps) / len(gaps) < 6, f"予測と実際が離れすぎ: 平均 {sum(gaps)/len(gaps):.1f}"

@@ -219,12 +219,20 @@ def _adjacent_pairs() -> Iterable[Move]:
 
 
 def legal_moves(grid: list[list[str]]) -> list[Move]:
-    """入れ替えると何か消える組だけ。消せない入れ替えは本家同様そもそも打てない。"""
+    """入れ替えると何か消える組だけ。消せない入れ替えは本家同様そもそも打てない。
+
+    判定は「入れ替えた **2 マス自身** が並びを作るか」。盤面のどこかに並びが
+    あるかで見てはいけない: 候補手の評価に使う補充なしの盤面には、まだ消えて
+    いない並びが残っている（resolve は 1 連鎖で止まる）ことがあり、その残骸の
+    せいでほぼ全部の入れ替えが合法手に見えてしまう。
+    """
     out = []
     for a, b in _adjacent_pairs():
-        if grid[a[0]][a[1]] == grid[b[0]][b[1]]:
+        left, right = grid[a[0]][a[1]], grid[b[0]][b[1]]
+        if not left or not right or left == right:
             continue
-        if _matches(_swapped(grid, a, b)):
+        hit = _matches(_swapped(grid, a, b))
+        if a in hit or b in hit:
             out.append((a, b))
     return out
 
