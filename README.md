@@ -111,6 +111,27 @@ score = -4*holes + 3*cleared_lines - 0.5*max_height - 0.2*bumpiness
 
 判断の質はほぼ互角のまま、**約 4 倍速く、約 1/24 のコスト**。
 
+### 実測（2026-09-20, seed 7, ズーキーパー, goal=レベル2）
+
+| エージェント | 手数 | agreement | mean_regret | fallbacks | レイテンシ中央値 |
+|---|---|---|---|---|---|
+| `heuristic`（基準線） | 19 | 1.00 | 0.00 | 0 | 0 ms |
+| `operator`（Claude Code / Opus 5） | **18** | 0.61 | 0.78 | 0 | 7,635 ms |
+| `jev` | — | — | — | **全手** | — |
+| `claude`（Haiku 4.5） | — | — | — | **全手** | — |
+
+`operator` は API ではなく、このリポジトリを書いている Claude Code 自身が
+1 手ずつ選んだもの。**Haiku 4.5 ではない**（別モデル・別の走らせ方なので、
+記事の Haiku の数字とは比較できない）。レイテンシは「答えを書き戻すまでの
+実時間」で、API の往復時間とは意味が違う。トークンとコストは計測していない。
+
+判断の中身としては、ヒューリスティックと 61% 一致し、外した 39% でも
+`mean_regret` 0.78（評価値でほぼ差がない手を選んでいた）。手数では 1 手だけ速い。
+**つまりこの局面では、評価式の最善手をそのまま打つのと大差ない。**
+
+`jev` と `claude` は 1 手も API に届いていないので、表に数字を書ける状態にない
+（下の「前提となるアカウント設定」を参照）。
+
 ### このリポジトリで測れる指標
 
 `heuristic` エージェント（評価式の最善手をそのまま打つ、API を叩かない基準線）を
@@ -221,6 +242,11 @@ curl -s -X POST -H "Authorization: Bearer $MGMT" -H 'Content-Type: application/j
 
 # 1 手ずつ JSON で見る
 .venv/bin/jev-bench --agent jev --verbose
+
+# API を使わず、自分（or 別プロセスの LLM）が 1 手ずつ選ぶ
+.venv/bin/jev-bench --agent operator --goal 2 --seed 7
+#   .operator/turn.json   <- 盤面と候補手が書き出される
+#   .operator/answer.txt  -> ラベルを 1 文字書き戻すと次の手へ進む
 ```
 
 ### ブラウザで 2 つの盤面を並べる
@@ -255,7 +281,8 @@ jevbench/
 └── agents/
     ├── heuristic_agent.py  API を叩かない基準線
     ├── jev_agent.py        System One に choice + noul を 1 往復で聞く
-    └── claude_agent.py     Haiku 4.5 に json_schema の enum で答えさせる
+    ├── claude_agent.py     Haiku 4.5 に json_schema の enum で答えさせる
+    └── operator_agent.py   API を使わず、人 / 別プロセスの LLM にファイル越しに聞く
 ```
 
 ## コスト計算について
