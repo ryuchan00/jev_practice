@@ -5,6 +5,13 @@ Jev（TypeSafe の **System One** モデル）と LLM（Claude Haiku 4.5）に
 
 元ネタ: [LLM と Jev のテトリス比較検証](https://zenn.dev/yrd/articles/64d4e2f4c3e71c)
 
+![ゲーム画面](docs/demo.gif)
+
+1 手ごとに盤面・使用トークン・累計コスト・レイテンシ中央値が更新される
+（[mp4 版](docs/demo.mp4)）。上の録画は `heuristic` を `step delay 110ms` で
+流したもの。jev / claude はまだアカウント側が通っていないので映っていない
+（下の「前提となるアカウント設定」を参照）。
+
 ## Haiku 4.5 と Jev の比較
 
 ### 何が違うのか
@@ -152,7 +159,12 @@ curl -s -X POST -H "Authorization: Bearer $MGMT" -H 'Content-Type: application/j
 # http://127.0.0.1:8000
 ```
 
-盤面・ライン数・レイテンシ中央値・一致率・概算コストがリアルタイムで並ぶ。
+盤面・ライン数・**使用トークン（in / out）・累計コスト**・レイテンシ中央値・
+一致率・フォールバック数がリアルタイムで並ぶ。
+
+`step delay (ms)` は 1 手ごとの待ち時間。`heuristic` は API を叩かないので
+既定の 0 だと一瞬で終わる。目で追いたいときや録画するときに 100 前後にする
+（CLI なら `--step-delay-ms`）。
 
 ## 構成
 

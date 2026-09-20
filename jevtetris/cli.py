@@ -22,6 +22,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--games", type=int, default=1, help="1 エージェントあたりの局数。")
     parser.add_argument("--target-lines", type=int, default=20)
     parser.add_argument("--max-pieces", type=int, default=200)
+    parser.add_argument(
+        "--step-delay-ms", type=int, default=0, help="1 手ごとに待つ（観賞用）。"
+    )
     parser.add_argument("--verbose", action="store_true", help="1 手ごとに JSON を出す。")
     args = parser.parse_args(argv)
 
@@ -39,6 +42,7 @@ def main(argv: list[str] | None = None) -> int:
                 seed=args.seed + game,
                 max_pieces=args.max_pieces,
                 target_lines=args.target_lines,
+                step_delay_ms=args.step_delay_ms,
             )
             try:
                 for event in play(agent, config):

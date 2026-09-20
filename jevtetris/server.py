@@ -71,11 +71,13 @@ async def ws(websocket: WebSocket) -> None:
     except (WebSocketDisconnect, json.JSONDecodeError):
         return
 
-    names = request.get("agents") or ["heuristic", "jev"]
+    # 同じエージェントを 2 つ選ばれても 1 回だけ走らせる（イベントは名前で束ねている）。
+    names = list(dict.fromkeys(request.get("agents") or ["heuristic", "jev"]))
     config = MatchConfig(
         seed=int(request.get("seed", 0)),
         target_lines=int(request.get("target_lines", 20)),
         max_pieces=int(request.get("max_pieces", 200)),
+        step_delay_ms=int(request.get("step_delay_ms", 0)),
     )
 
     lock = asyncio.Lock()

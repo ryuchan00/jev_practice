@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import random
+import time
 from dataclasses import dataclass
 from typing import Iterator
 
@@ -17,6 +18,8 @@ class MatchConfig:
     max_pieces: int = 200
     target_lines: int = 20
     candidate_limit: int = 12
+    step_delay_ms: int = 0
+    """1 手ごとに待つ時間。API が速すぎて目で追えないときの観賞用。"""
 
 
 @dataclass
@@ -40,6 +43,7 @@ def play(agent: Agent, config: MatchConfig | None = None) -> Iterator[dict]:
     seed が同じなら、どのエージェントでも同じミノ列・同じ候補ラベルになる。
     """
     cfg = config or MatchConfig()
+    meter = agent if isinstance(agent, BaseAgent) else None
     bag = SevenBag(cfg.seed)
     rng = random.Random(cfg.seed)
     board = Board()
@@ -88,10 +92,16 @@ def play(agent: Agent, config: MatchConfig | None = None) -> Iterator[dict]:
             "agreed": turn.agreed_with_heuristic,
             "regret": round(turn.regret, 2),
             "note": decision.note,
+            # ここまでの累計。UI で使用トークンと料金を常時出すために毎手送る。
+            "input_tokens": meter.input_tokens if meter else 0,
+            "output_tokens": meter.output_tokens if meter else 0,
+            "cost_usd": round(meter.cost_usd, 6) if meter else 0.0,
         }
 
         if lines >= cfg.target_lines:
             break
+        if cfg.step_delay_ms:
+            time.sleep(cfg.step_delay_ms / 1000)
 
     yield {
         "type": "summary",

@@ -22,7 +22,8 @@
   .grid .empty { color:#2a2f3a; }
   dl { display:grid; grid-template-columns:auto auto; gap:2px 12px; margin:12px 0 0; font-size:12px; }
   dt { color:var(--dim); } dd { margin:0; text-align:right; }
-  .err { color:#ff8f8f; font-size:12px; margin-top:8px; }
+  .err { color:#ff8f8f; font-size:12px; margin-top:8px; word-break:break-all; }
+  dd[data-k="cost"], dd[data-k="tokens"] { color:#9fd8a0; }
 </style>
 </head>
 <body>
@@ -33,6 +34,7 @@
   <label>agent B <select id="agentB"></select></label>
   <label>seed <input id="seed" type="number" value="0" style="width:80px"></label>
   <label>target lines <input id="lines" type="number" value="20" style="width:80px"></label>
+  <label>step delay (ms) <input id="delay" type="number" value="0" style="width:90px"></label>
   <button id="start" type="submit">start</button>
 </form>
 
@@ -53,8 +55,10 @@ function panel(agent) {
       <dt>pieces</dt><dd data-k="pieces">0</dd>
       <dt>lines</dt><dd data-k="lines">0</dd>
       <dt>latency (median)</dt><dd data-k="latency">–</dd>
+      <dt>tokens in / out</dt><dd data-k="tokens">0 / 0</dd>
+      <dt>cost (USD)</dt><dd data-k="cost">$0.000000</dd>
       <dt>agreement</dt><dd data-k="agreement">–</dd>
-      <dt>cost (USD)</dt><dd data-k="cost">–</dd>
+      <dt>fallbacks</dt><dd data-k="fallbacks">0</dd>
     </dl>
     <div class="err" data-k="err"></div>`;
   el.querySelector(".grid").innerHTML = renderRows(Array(20).fill(EMPTY_ROW));
@@ -64,6 +68,7 @@ function panel(agent) {
     grid: el.querySelector(".grid"),
     set(k, v) { el.querySelector(`[data-k="${k}"]`).textContent = v; },
     latencies: [],
+    fallbacks: 0,
   };
   panels.set(agent, p);
   return p;
@@ -97,7 +102,10 @@ document.getElementById("controls").addEventListener("submit", ev => {
   boards.innerHTML = "";
   panels.clear();
 
-  const agents = [document.getElementById("agentA").value, document.getElementById("agentB").value];
+  // 同じものを 2 つ選ばれてもパネルは 1 枚（イベントはエージェント名で束ねている）。
+  const agents = [...new Set(
+    [document.getElementById("agentA").value, document.getElementById("agentB").value]
+  )];
   agents.forEach(panel);
 
   const ws = new WebSocket(`ws://${location.host}/ws`);
@@ -105,6 +113,7 @@ document.getElementById("controls").addEventListener("submit", ev => {
     agents,
     seed: Number(document.getElementById("seed").value),
     target_lines: Number(document.getElementById("lines").value),
+    step_delay_ms: Number(document.getElementById("delay").value),
   }));
 
   ws.onmessage = e => {
@@ -118,11 +127,20 @@ document.getElementById("controls").addEventListener("submit", ev => {
       p.set("lines", msg.lines);
       p.latencies.push(msg.latency_ms);
       p.set("latency", `${Math.round(median(p.latencies))} ms`);
+      p.set("tokens", `${msg.input_tokens.toLocaleString()} / ${msg.output_tokens.toLocaleString()}`);
+      p.set("cost", `$${msg.cost_usd.toFixed(6)}`);
+      if (msg.note.startsWith("fallback: ")) {
+        p.fallbacks += 1;
+        p.set("fallbacks", p.fallbacks);
+        p.set("err", msg.note.slice("fallback: ".length));
+      }
     }
     if (msg.type === "summary") {
       p.set("agreement", `${Math.round(msg.agreement * 100)} %`);
-      p.set("cost", `$${msg.cost_usd.toFixed(4)}`);
+      p.set("cost", `$${msg.cost_usd.toFixed(6)}`);
       p.set("latency", `${Math.round(msg.median_latency_ms)} ms`);
+      p.set("fallbacks", `${msg.fallbacks} / ${msg.pieces}`);
+      if (msg.fallbacks) p.set("err", `API 未到達: ${msg.fallback_reason}`);
     }
   };
 
