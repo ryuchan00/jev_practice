@@ -22,6 +22,9 @@ from typing import Any
 from ..core import BaseAgent, Candidate, Decision, fallback
 
 DEFAULT_DIR = Path(os.environ.get("JEV_OPERATOR_DIR", ".operator"))
+DEFAULT_NAME = os.environ.get("JEV_OPERATOR_NAME", "operator")
+"""誰が打ったかを結果に残すための名前。'operator' のままだと、人が打ったのか
+Haiku のサブエージェントが打ったのかが後から分からなくなる。"""
 DEFAULT_TIMEOUT = float(os.environ.get("JEV_OPERATOR_TIMEOUT", "600"))
 POLL_SECONDS = 0.25
 
@@ -29,8 +32,14 @@ POLL_SECONDS = 0.25
 class OperatorAgent(BaseAgent):
     name = "operator"
 
-    def __init__(self, directory: Path | None = None, timeout: float = DEFAULT_TIMEOUT) -> None:
+    def __init__(
+        self,
+        directory: Path | None = None,
+        timeout: float = DEFAULT_TIMEOUT,
+        name: str | None = None,
+    ) -> None:
         super().__init__()
+        self.name = name or DEFAULT_NAME
         self.dir = Path(directory or DEFAULT_DIR)
         self.dir.mkdir(parents=True, exist_ok=True)
         self.timeout = timeout
