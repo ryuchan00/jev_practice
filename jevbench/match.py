@@ -20,6 +20,7 @@ class MatchConfig:
     seed: int = 0
     max_turns: int | None = None
     goal: int | None = None
+    turns: int | None = None
     candidate_limit: int = 12
     step_delay_ms: int = 0
     """1 手ごとに待つ時間。API が速すぎて目で追えないときの観賞用。"""
@@ -31,6 +32,7 @@ class MatchResult:
     game: str
     goal_label: str
     progress: int
+    score: int
     reached_goal: bool
     turns: int
     stuck: bool
@@ -52,7 +54,11 @@ def play(agent: Agent, config: MatchConfig | None = None) -> Iterator[dict]:
     cfg = config or MatchConfig()
     game: Game = build_game(cfg.game)
     goal = cfg.goal if cfg.goal is not None else game.default_goal
-    max_turns = cfg.max_turns if cfg.max_turns is not None else game.default_max_turns
+    turn_limit = (
+        cfg.turns
+        if cfg.turns is not None
+        else cfg.max_turns if cfg.max_turns is not None else game.default_max_turns
+    )
 
     meter = agent if isinstance(agent, BaseAgent) else None
     rng = random.Random(cfg.seed)
@@ -60,7 +66,7 @@ def play(agent: Agent, config: MatchConfig | None = None) -> Iterator[dict]:
     turns: list[Turn] = []
     stuck = False
 
-    for index in range(max_turns):
+    for index in range(turn_limit):
         candidates = game.candidates(state, cfg.candidate_limit, rng)
         if not candidates:
             stuck = True
@@ -97,7 +103,8 @@ def play(agent: Agent, config: MatchConfig | None = None) -> Iterator[dict]:
             "cost_usd": round(meter.cost_usd, 6) if meter else 0.0,
         }
 
-        if game.progress(state) >= goal:
+        # 固定長では、異なるエージェントを同じ手数で比較するため目標を終了条件にしない。
+        if cfg.turns is None and game.progress(state) >= goal:
             break
         if game.hud(state).get("over"):
             stuck = True
@@ -107,12 +114,20 @@ def play(agent: Agent, config: MatchConfig | None = None) -> Iterator[dict]:
 
     yield {
         "type": "summary",
-        **_summarize(agent, game, turns, game.progress(state), goal, stuck).__dict__,
+        **_summarize(
+            agent, game, turns, game.progress(state), game.score(state), goal, stuck
+        ).__dict__,
     }
 
 
 def _summarize(
-    agent: Agent, game: Game, turns: list[Turn], progress: int, goal: int, stuck: bool
+    agent: Agent,
+    game: Game,
+    turns: list[Turn],
+    progress: int,
+    score: int,
+    goal: int,
+    stuck: bool,
 ) -> MatchResult:
     agreed = sum(1 for t in turns if t.agreed_with_heuristic)
     regrets = [t.regret for t in turns]
@@ -125,6 +140,7 @@ def _summarize(
         game=game.name,
         goal_label=game.goal_label,
         progress=progress,
+        score=score,
         reached_goal=progress >= goal,
         turns=len(turns),
         stuck=stuck,

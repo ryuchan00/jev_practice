@@ -259,6 +259,10 @@ class Tetris:
     def progress(self, state: State) -> int:
         return state.lines
 
+    def score(self, state: State) -> int:
+        """独立した得点を持たないため、消去ライン数を得点として扱う。"""
+        return state.lines
+
     def rows(self, state: State) -> list[str]:
         return state.board.to_rows()
 

@@ -25,6 +25,9 @@ class Game(Protocol):
     def progress(self, state: Any) -> int:
         """ライン数やスコアなど、目標と突き合わせる値。"""
 
+    def score(self, state: Any) -> int:
+        """対局終了時に比較用として報告する得点。"""
+
     def rows(self, state: Any) -> list[str]:
         """UI に出す盤面。1 要素 1 行。"""
 

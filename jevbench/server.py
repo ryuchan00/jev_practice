@@ -81,10 +81,12 @@ async def ws(websocket: WebSocket) -> None:
     # 同じエージェントを 2 つ選ばれても 1 回だけ走らせる（イベントは名前で束ねている）。
     names = list(dict.fromkeys(request.get("agents") or ["heuristic", "jev"]))
     goal = request.get("goal")
+    turns = request.get("turns")
     config = MatchConfig(
         game=request.get("game", "zookeeper"),
         seed=int(request.get("seed", 0)),
         goal=int(goal) if goal else None,
+        turns=int(turns) if turns is not None else None,
         step_delay_ms=int(request.get("step_delay_ms", 0)),
     )
 

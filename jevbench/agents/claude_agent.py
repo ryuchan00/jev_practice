@@ -2,7 +2,7 @@
 
 System One との差を見るのが目的なので、
 - 盤面とルール説明は system に置いて prompt caching を効かせる
-- 出力は json_schema で候補ラベルの enum に固定する（パースの揺れを消す）
+- 対応する API では json_schema で候補ラベルの enum に固定する
 """
 
 from __future__ import annotations
@@ -12,7 +12,7 @@ import os
 
 from typing import Any
 
-from ..core import BaseAgent, Candidate, Decision, fallback
+from ..core import BaseAgent, Candidate, Decision, fallback, pick_label
 
 # ゲートウェイ経由の場合はモデル ID の綴りが変わることがあるので環境変数で差し替える。
 # base_url は SDK が ANTHROPIC_BASE_URL を読む。
@@ -33,7 +33,8 @@ best label.
 Prefer moves that score the most now without leaving the board in a worse
 shape for later turns.
 
-Answer only through the required JSON schema. Do not explain."""
+Answer with the label only, e.g. `G`. When a required JSON schema is enforced,
+use that format. Do not explain."""
 
 
 class ClaudeAgent(BaseAgent):
@@ -96,12 +97,21 @@ class ClaudeAgent(BaseAgent):
 
         try:
             text = next(b.text for b in res.content if b.type == "text")
-            label = json.loads(text)["move"]
-        except (StopIteration, ValueError, KeyError) as exc:
+        except StopIteration as exc:
             return fallback(candidates, f"unparsable response: {exc}")
 
-        if label not in labels:
-            return fallback(candidates, f"unknown label {label!r}")
+        label = None
+        # Lolipop AI は output_config を無視するため、JSON の次に平文も解釈する。
+        try:
+            parsed = json.loads(text)
+        except (TypeError, ValueError):
+            parsed = None
+        if isinstance(parsed, dict) and parsed.get("move") in labels:
+            label = parsed["move"]
+        if label is None:
+            label = pick_label(text, labels)
+        if label is None:
+            return fallback(candidates, "unparsable response: no usable label")
 
         return Decision(
             label=label,

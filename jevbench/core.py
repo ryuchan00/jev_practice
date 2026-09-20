@@ -3,13 +3,26 @@
 from __future__ import annotations
 
 import random
+import re
 import string
 import time
+from collections.abc import Collection
 from dataclasses import dataclass, field
 from statistics import median
 from typing import Any, Protocol
 
 LABELS = string.ascii_uppercase
+
+
+def pick_label(text: str, labels: Collection[str]) -> str | None:
+    """ASCII の単語に埋もれていない最後の候補ラベルを返す。"""
+    if not labels:
+        return None
+
+    label_pattern = "|".join(re.escape(label) for label in sorted(labels, key=len, reverse=True))
+    # 単純な包含判定では、説明文の単語に含まれるラベルを回答と誤認するため。
+    matches = re.findall(rf"(?<![A-Za-z])(?:{label_pattern})(?![A-Za-z])", text)
+    return matches[-1] if matches else None
 
 
 @dataclass(frozen=True)

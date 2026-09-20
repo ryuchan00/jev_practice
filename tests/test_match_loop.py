@@ -40,6 +40,47 @@ def test_turn_events_carry_running_token_and_cost_totals(game):
         assert {"input_tokens", "output_tokens", "cost_usd"} <= e.keys()
 
 
+@pytest.mark.parametrize("game", GAME_NAMES)
+def test_fixed_length_runs_past_the_default_goal(game):
+    baseline = list(play(HeuristicAgent(), MatchConfig(game=game, seed=3)))[-1]
+    fixed_turns = 70
+    assert baseline["turns"] < fixed_turns
+
+    summary = list(
+        play(HeuristicAgent(), MatchConfig(game=game, seed=3, turns=fixed_turns))
+    )[-1]
+    assert summary["turns"] == fixed_turns
+
+
+def test_fixed_length_overrides_goal():
+    fixed_turns = 5
+    summary = list(
+        play(
+            HeuristicAgent(),
+            MatchConfig(game="zookeeper", seed=3, goal=1, turns=fixed_turns),
+        )
+    )[-1]
+    assert summary["turns"] == fixed_turns
+
+
+def test_summary_carries_zookeeper_score():
+    summary = list(
+        play(HeuristicAgent(), MatchConfig(game="zookeeper", seed=3, turns=3))
+    )[-1]
+    assert summary["score"] > 0
+
+
+def test_fixed_length_game_over_reports_stuck():
+    summary = list(
+        play(
+            HeuristicAgent(),
+            MatchConfig(game="zookeeper", seed=3, turns=5, candidate_limit=0),
+        )
+    )[-1]
+    assert summary["turns"] < 5
+    assert summary["stuck"]
+
+
 def test_labels_are_shuffled_so_the_best_move_is_not_always_first():
     scored = [(float(i), f"move {i}", {"i": i}, i) for i in range(12)]
     firsts = {

@@ -4,11 +4,10 @@ from __future__ import annotations
 
 import json
 import os
-import re
 import subprocess
 from typing import Any
 
-from ..core import BaseAgent, Candidate, Decision, fallback
+from ..core import BaseAgent, Candidate, Decision, fallback, pick_label
 
 DEFAULT_MODEL = os.environ.get("JEV_CLI_MODEL", "claude-haiku-4-5")
 
@@ -65,10 +64,8 @@ Answer with exactly one character: the chosen label, nothing else."""
             return fallback(candidates, f"claude CLI exited with status {result.returncode}")
 
         labels = {candidate.label for candidate in candidates}
-        label_pattern = "|".join(re.escape(label) for label in sorted(labels, key=len, reverse=True))
-        # 単純な包含判定では、説明文の単語に含まれるラベルを回答と誤認するため。
-        matches = re.findall(rf"(?<![A-Za-z])(?:{label_pattern})(?![A-Za-z])", result.stdout)
-        if not matches:
+        label = pick_label(result.stdout, labels)
+        if label is None:
             return fallback(candidates, "claude CLI returned no usable label")
 
-        return Decision(label=matches[-1], latency_ms=0.0)
+        return Decision(label=label, latency_ms=0.0)

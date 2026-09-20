@@ -360,6 +360,9 @@ class ZooKeeper:
     def progress(self, state: State) -> int:
         return state.level
 
+    def score(self, state: State) -> int:
+        return state.score
+
     def rows(self, state: State) -> list[str]:
         return ["".join(row) for row in state.grid]
 

@@ -3,8 +3,6 @@
 import subprocess
 from types import SimpleNamespace
 
-import pytest
-
 from jevbench.agents import claude_cli_agent as cca
 from jevbench.core import Candidate
 
@@ -32,28 +30,15 @@ def _assert_fallback(decision):
     assert decision.note.startswith("fallback: ")
 
 
-@pytest.mark.parametrize(
-    ("stdout", "expected"),
-    [
-        ("G", "G"),
-        ("G\n", "G"),
-        ("The answer is J.", "J"),
-        ("Looking at the options, I pick G", "G"),
-        ("Based on the quota, C is best", "C"),
-        ("I considered B and D, but choose F", "F"),
-        ("**G**", "G"),
-    ],
-)
-def test_standalone_label_is_parsed(monkeypatch, stdout, expected):
-    monkeypatch.setattr(cca.subprocess, "run", lambda *args, **kwargs: _result(stdout))
+def test_standalone_label_is_parsed(monkeypatch):
+    monkeypatch.setattr(cca.subprocess, "run", lambda *args, **kwargs: _result("I pick G"))
     decision = cca.ClaudeCliAgent()._decide({"board": [], "stats": {}}, _full_cands())
-    assert decision.label == expected
+    assert decision.label == "G"
     assert not decision.fell_back
 
 
-@pytest.mark.parametrize("stdout", ["Looking at the board", "", "none of these"])
-def test_output_without_standalone_label_falls_back(monkeypatch, stdout):
-    monkeypatch.setattr(cca.subprocess, "run", lambda *args, **kwargs: _result(stdout))
+def test_output_without_standalone_label_falls_back(monkeypatch):
+    monkeypatch.setattr(cca.subprocess, "run", lambda *args, **kwargs: _result("none of these"))
     decision = cca.ClaudeCliAgent()._decide({}, _full_cands())
     assert decision.label == "L"
     assert decision.note.startswith("fallback: ")

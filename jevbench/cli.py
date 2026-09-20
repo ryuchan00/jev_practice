@@ -11,7 +11,7 @@ from .games import GAME_NAMES
 from .match import MatchConfig, play
 
 COLUMNS = [
-    "agent", "game", "seed", "progress", "turns",
+    "agent", "game", "seed", "progress", "score", "turns",
     "median_latency_ms", "in_tok", "out_tok", "cost_usd",
     "agreement", "mean_regret", "fallbacks",
 ]
@@ -27,6 +27,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--seed", type=int, default=0, help="全員に同じ局を配る seed。")
     parser.add_argument("--games", type=int, default=1, help="1 エージェントあたりの局数。")
     parser.add_argument("--goal", type=int, default=None, help="目標ライン数 / スコア。")
+    parser.add_argument("--turns", type=int, default=None, help="目標を無視して固定手数で走らせる。")
     parser.add_argument("--max-turns", type=int, default=None)
     parser.add_argument("--step-delay-ms", type=int, default=0, help="1 手ごとに待つ（観賞用）。")
     parser.add_argument("--verbose", action="store_true", help="1 手ごとに JSON を出す。")
@@ -42,7 +43,7 @@ def main(argv: list[str] | None = None) -> int:
                 break
             seed = args.seed + game_index
             config = MatchConfig(
-                game=args.game, seed=seed, goal=args.goal,
+                game=args.game, seed=seed, goal=args.goal, turns=args.turns,
                 max_turns=args.max_turns, step_delay_ms=args.step_delay_ms,
             )
             try:
