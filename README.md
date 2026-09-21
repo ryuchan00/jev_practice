@@ -7,8 +7,12 @@ Jev（TypeSafe の **System One** モデル）と LLM（Claude Haiku 4.5）に
 
 ![jev と Haiku 4.5 を同時に走らせた画面](docs/jev_vs_haiku.gif)
 
-（[mp4 版・実時間](docs/jev_vs_haiku.mp4) / [開始時点](docs/jev_vs_haiku_start.png) /
-[終了時点](docs/jev_vs_haiku.png)）
+GitHub の README は mp4 を再生できない（`<video>` はサニタイズで消える）ので、
+ここは GIF を貼っている。実時間の動画は
+**[docs/jev_vs_haiku.mp4](docs/jev_vs_haiku.mp4)** をダウンロードするか、
+[jsDelivr 経由](https://cdn.jsdelivr.net/gh/ryuchan00/jev_practice@00a2e286fb2de61520d1e8fab9b19e7cc4b25ebe/docs/jev_vs_haiku.mp4)
+で直接再生できる。静止画は [開始時点](docs/jev_vs_haiku_start.png) /
+[終了時点](docs/jev_vs_haiku.png)。
 
 **左が jev（System One）、右が claude（Haiku 4.5）。**
 
@@ -31,25 +35,16 @@ Haiku レベル 2・スコア 2,840・$0.0488 / 2,927 ms**。どちらも fallba
 レイテンシ中央値・フォールバック数が並ぶ。1 手は **入れ替え（青枠）→ 消える 3 匹が
 黄色く弾ける → 上から落ちてくる** の順に見せる。
 
-ゲームは 2 つある。どちらも「候補手を列挙 → 上位 12 手に絞る → どれが最善か 1 回だけ聞く」
-という同じ形に落としてあるので、**エージェントから見ると違いは state の中身だけ**。
-
-| | `zookeeper` | `tetris` |
-|---|---|---|
-| 盤面 | 8×8・動物 7 種 | 10×20 |
-| 1 手 | 隣り合う 2 匹を入れ替える | ミノを回して落とす |
-| 毎手の候補数 | 3〜30 | 9〜34 |
-| 目標 | レベル 3 到達 | 20 ライン |
-| 効いてくる判断 | **まだ足りない動物を狙う**、連鎖、手詰まり回避 | 穴を作らない、高さを抑える |
+「候補手を列挙 → 上位 12 手に絞る → どれが最善か 1 回だけ聞く」という形に
+落としてあるので、エージェントから見た違いは state の中身だけになる。
 
 ## ズーキーパー
 
-本家 [ZOO KEEPER](https://ja.wikipedia.org/wiki/ZOO_KEEPER_(%E3%82%B2%E3%83%BC%E3%83%A0))
-（KITERETSU / ROBOT, 2003）のルールに寄せてある。
+よくある 3 マッチパズル。ルールは次のとおり。
 
 - 8×8 に **7 種の動物**（ゾウ・キリン・ワニ・パンダ・カバ・サル・ライオン）
 - 隣り合う 2 匹を入れ替え、縦か横に 3 匹以上並ぶと消える
-- **入れ替えても消せない手はそもそも打てない**（本家と同じ。候補手に出てこない）
+- **入れ替えても消せない手はそもそも打てない**（候補手に出てこない）
 - 消えると上から落ちてきて連鎖する
 - 動物を捕獲すると**タイマーが回復**し、1 手ごとに減る。0 でゲームオーバー
 - **全種**のノルマを満たすとレベルアップ。レベルが上がるほどタイマーの減りが速くなる
@@ -60,7 +55,7 @@ Haiku レベル 2・スコア 2,840・$0.0488 / 2,927 ms**。どちらも fallba
 ノルマが「全種いくつずつ」なので、**一番多く消える手が正解とは限らない**。
 ライオンのノルマは終わっていてワニが残っているなら、6 匹のライオンより
 3 匹のワニを消す手の方が価値がある。素点だけでは候補の順位が決まらないので、
-テトリスより「どれが最善か」の判断が効く。
+盤面を読んで選ぶ余地が残る。
 
 候補手の評価式:
 
@@ -82,18 +77,6 @@ score = 2.0*(まだ足りない動物を消す数)   # ノルマに効く分
 contributors）を丸く敷いている。ファイルと対応は
 [`jevbench/static/animals/LICENSE.md`](jevbench/static/animals/LICENSE.md)。
 
-## テトリス
-
-![テトリスの画面](docs/tetris.gif)
-
-（[mp4 版](docs/tetris.mp4)）
-
-記事の評価式をそのまま使う。
-
-```
-score = -4*holes + 3*cleared_lines - 0.5*max_height - 0.2*bumpiness
-```
-
 ## Haiku 4.5 と Jev の比較
 
 ### 何が違うのか
@@ -106,20 +89,8 @@ score = -4*holes + 3*cleared_lines - 0.5*max_height - 0.2*bumpiness
 | 向く仕事 | 分類・選択・判定を高頻度で回す | 生成・説明・自由形式の推論 |
 | 向かない仕事 | 文章を書く、手順を考える | 1 手 200ms 以内の選択をゲームループで回す |
 
-どちらのゲームも 1 手は「12 個の候補から 1 個選ぶ」だけで、
-**文章を作る能力は 1 ミリも要らない**。Jev が効くのはそういう形の仕事。
-
-### 記事で報告されている数値（テトリス）
-
-> 元記事の計測値であって、このリポジトリで測った値ではない。
-
-| 指標 | Jev | Haiku 4.5 |
-|---|---|---|
-| API レイテンシ（中央値） | 239 ms | 1,011 ms |
-| 1 局あたりの推定費用 | $0.006 | $0.15 |
-| 20 ライン到達 | 8/10 局 | 9/10 局 |
-
-判断の質はほぼ互角のまま、**約 4 倍速く、約 1/24 のコスト**。
+1 手は「12 個の候補から 1 個選ぶ」だけで、**文章を作る能力は要らない**。
+System One が向くのはこの形の仕事。
 
 ### 実測（2026-09-21, ズーキーパー, **30 手固定**, seed 0〜4）
 
@@ -127,9 +98,9 @@ score = -4*holes + 3*cleared_lines - 0.5*max_height - 0.2*bumpiness
 全エージェントが同じゲートウェイ・同じコード経路・同じ計測系を通っている。
 
 > 以前このセクションに載っていた数値（jev 2,644 / Haiku 2,578）は、
-> jev 側のエージェントにテトリス時代の指示文が残ったまま渡っていたバグ入りの
-> 計測値だった。以下は `jev` 側の目的文（objective）を Zookeeper 用に直し、
-> 両エージェントへ**一字一句同じ**目的文を渡すよう修正した後に取り直した値。
+> jev 側だけ別のゲーム向けの指示文が渡ったままのバグ入り計測値だった。
+> 以下は目的文をゲーム側に一本化し、両エージェントへ**一字一句同じ**文字列を
+> 渡すよう直したあとに取り直した値。
 
 | エージェント | score 平均 | score 範囲 (min〜max) | 標準偏差 | レイテンシ / 手 | コスト / 局 | fallbacks |
 |---|---|---|---|---|---|---|
@@ -144,13 +115,6 @@ score = -4*holes + 3*cleared_lines - 0.5*max_height - 0.2*bumpiness
 元記事の報告（約 4 倍速・約 1/24 のコスト・判断品質はほぼ同等）と、
 「速度・コストは大差、判断の質は互角」という結論の方向は一致した
 （倍率はゲーム・モデル構成が異なるため単純比較はできない）。
-
-#### もう 1 つの指標: 目標到達までの手数
-
-30 手固定スコアとは別に「レベル 2 到達までの手数」でも比較していたが、
-その値は jev_agent の目的文がテトリス時代のまま残っていたバグ入りの計測時のもので、
-上記の修正（jev 側にもズーキーパー用の目的文を渡すよう修正）の後に取り直していない。
-古い数値をここに載せても意味がないため取り下げた。再測定は今後の課題。
 
 #### agreement と mean_regret は品質の指標ではない
 
@@ -177,7 +141,7 @@ API が失敗した手はヒューリスティック最善手に逃がして局�
 
 | 指標 | 意味 |
 |---|---|
-| `progress` / `turns` | 到達したレベル or ライン数 / 打った手数 |
+| `progress` / `turns` | 到達したレベル / 打った手数 |
 | `median_latency_ms` | 1 手あたり API 往復の中央値 |
 | `in_tok` / `out_tok` | 使用トークン（累計） |
 | `cost_usd` | 単価からの概算（Haiku はキャッシュ読み書きの割引・割増込み） |
@@ -266,7 +230,7 @@ curl -s -X POST -H "Authorization: Bearer $MGMT" -H 'Content-Type: application/j
   `403 permission_error / model_not_allowed`（キーやルールでは開けられない）。
   **2026-09-20 に許可済みで、jev は動いている**
 - **残高**: prepaid なので、チャージが無いと `402 billing_error / Insufficient balance`。
-  **Haiku 側はこれで止まったまま**
+  チャージ後は Haiku も動いている
 
 ## 実測する
 
@@ -276,9 +240,6 @@ curl -s -X POST -H "Authorization: Bearer $MGMT" -H 'Content-Type: application/j
 
 # jev と claude を同じ seed で 10 局ずつ
 .venv/bin/jev-bench --agent jev --agent claude --games 10
-
-# テトリスで同じことをする
-.venv/bin/jev-bench --game tetris --agent jev --agent claude --games 10
 
 # 1 手ずつ JSON で見る
 .venv/bin/jev-bench --agent jev --verbose
@@ -316,8 +277,7 @@ jevbench/
 ├── static/animals/         動物アイコン（Twemoji, CC-BY 4.0）
 ├── games/
 │   ├── base.py             Game プロトコル
-│   ├── zookeeper.py        8x8・動物 7 種・ノルマ・タイマー・連鎖
-│   └── tetris.py           盤面・7 種ミノ・7-bag・ハードドロップ
+│   └── zookeeper.py        8x8・動物 7 種・ノルマ・タイマー・連鎖
 └── agents/
     ├── heuristic_agent.py  API を叩かない基準線
     ├── jev_agent.py        System One に choice + noul を 1 往復で聞く
