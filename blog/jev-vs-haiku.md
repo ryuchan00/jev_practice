@@ -2,7 +2,10 @@
 
 TypeSafe AI の System One は、文章を生成しないモデルである。状態と型のついた質問を渡すと、選択肢ごとの確率と確信度が返る。返るのが選択肢ひとつとその確率だけなので、出力トークン数に比例する時間と費用がかからない。分類や選択だけを高い頻度で繰り返す処理なら、この形のほうが安く速く済む理屈になる。ただし、判断の質をどれだけ手放すことになるのかは、自分の題材で測らないとわからない。そこで、ズーキーパー型のマッチ 3 パズルを 30 手ずつ打たせて、System One の Jev と Claude Haiku 4.5 を並べた。
 
-![jev と Haiku 4.5 に同じ盤面を解かせている画面](https://cdn-ak.f.st-hatena.com/images/fotolife/l/leokun0210/20260921/20260921115506.gif)
+<video controls playsinline preload="metadata" style="max-width:100%"
+  poster="https://cdn.jsdelivr.net/gh/ryuchan00/jev_practice@00a2e286fb2de61520d1e8fab9b19e7cc4b25ebe/docs/jev_vs_haiku_start.png">
+  <source src="https://cdn.jsdelivr.net/gh/ryuchan00/jev_practice@00a2e286fb2de61520d1e8fab9b19e7cc4b25ebe/docs/jev_vs_haiku.mp4" type="video/mp4">
+</video>
 
 左が Jev、右が Haiku 4.5 である。両者には同じ seed から生成した同一の初期盤面を渡している。候補手の列挙、上位 12 手への絞り込み、ラベルの割り当てはすべて共通のコードが行い、通信もどちらも同じゲートウェイを経由する。手数も 30 手で揃えてある。異なるのは、その 12 手のうちどれが最善かを誰に尋ねるかだけである。
 
