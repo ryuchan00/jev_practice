@@ -2,7 +2,7 @@
 
 ## まずこれを見てほしい
 
-![jevとHaiku 4.5を同時に走らせた画面](★ここにjev_vs_haiku.gifをアップロード★)
+![jevとHaiku 4.5を同時に走らせた画面](https://cdn-ak.f.st-hatena.com/images/fotolife/l/leokun0210/20260921/20260921115506.gif)
 
 左が **Jev**、右が **Claude Haiku 4.5**。
 
